@@ -599,6 +599,10 @@ select.form-inp option{background:#0c1228;}
             <label class="form-label">¿Cómo te llama la IA?</label>
             <input class="form-inp" id="ia-usuario-nombre" placeholder="Tu nombre"/>
           </div>
+          <div class="config-row">
+            <div class="config-row-info"><div class="config-row-lbl">🔊 Responder con voz</div><div class="config-row-sub">Kontrol te habla de vuelta</div></div>
+            <div class="toggle on" id="toggle-tts" onclick="toggleTTSConfig()"><div class="toggle-thumb"></div></div>
+          </div>
         </div>
 
         <!-- Correos bancarios -->
@@ -647,6 +651,7 @@ select.form-inp option{background:#0c1228;}
         <span class="bb-send" onclick="sendIA()">➤</span>
       </div>
       <div class="bb-mic" id="mic-btn" onclick="toggleMic()" title="Hablar">🎤</div>
+      <div class="bb-mic" id="tts-btn" onclick="toggleTTS()" title="Voz activa — toca para silenciar" style="font-size:15px">🔊</div>
     </div>
   </div>
 
@@ -1812,6 +1817,7 @@ async function sendIA(){
     hideTyping();
     addIAMsg(localResp,'bot');
     iaHistory.push({role:'assistant',content:localResp});
+    hablar(localResp);
     return;
   }
 
@@ -1851,6 +1857,18 @@ async function sendIA(){
       });
       const data = await res.json();
       respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
+    } else if(cfg.proveedor==='groq'){
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
+        body:JSON.stringify({
+          model: cfg.modelo||'llama-3.3-70b-versatile',
+          max_tokens:500,
+          messages:[{role:'system',content:buildIASystem()},...iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))]
+        })
+      });
+      const data = await res.json();
+      respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
     } else if(cfg.proveedor==='gemini'){
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.modelo||'gemini-1.5-flash'}:generateContent?key=${cfg.apiKey}`,{
         method:'POST',
@@ -1863,7 +1881,7 @@ async function sendIA(){
     hideTyping();
     addIAMsg(respText,'bot');
     iaHistory.push({role:'assistant',content:respText});
-    // Ejecutar acciones si las hay
+    hablar(respText);
     ejecutarAccionesIA(respText, msg);
   } catch(e){
     hideTyping();
@@ -1977,6 +1995,75 @@ function toggleMic(){
   micActive=true;
   document.getElementById('mic-btn').classList.add('active');
   toast('🎤 Habla ahora…','var(--blue)');
+}
+
+// ════════════════════════════════════════
+// TEXT TO SPEECH — Kontrol habla de vuelta
+// ════════════════════════════════════════
+let ttsActivo = true;
+let ttsSpeaking = false;
+
+function hablar(texto){
+  if(!ttsActivo) return;
+  if(!('speechSynthesis' in window)){
+    toast('⚠️ Tu navegador no soporta voz de salida','var(--amber)');
+    return;
+  }
+  // Cancelar si ya está hablando
+  window.speechSynthesis.cancel();
+
+  // Limpiar texto — quitar emojis y markdown
+  const limpio = texto
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu,'')
+    .replace(/[*_#`]/g,'')
+    .replace(/\[.*?\]/g,'')
+    .substring(0,300); // máx 300 chars para no hablar demasiado
+
+  const utt = new SpeechSynthesisUtterance(limpio);
+  utt.lang = 'es-CO';
+  utt.rate = 1.05;
+  utt.pitch = 1.0;
+  utt.volume = 1.0;
+
+  // Buscar voz en español
+  const voces = window.speechSynthesis.getVoices();
+  const vozEs = voces.find(v=>v.lang.startsWith('es')&&v.name.toLowerCase().includes('female'))
+    || voces.find(v=>v.lang.startsWith('es'))
+    || null;
+  if(vozEs) utt.voice = vozEs;
+
+  utt.onstart = ()=>{ ttsSpeaking=true; document.getElementById('mic-btn').style.background='rgba(167,139,250,0.2)'; };
+  utt.onend = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
+  utt.onerror = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
+
+  window.speechSynthesis.speak(utt);
+}
+
+function toggleTTS(){
+  ttsActivo = !ttsActivo;
+  const btn = document.getElementById('tts-btn');
+  if(btn){
+    btn.textContent = ttsActivo ? '🔊' : '🔇';
+    btn.title = ttsActivo ? 'Voz activa — toca para silenciar' : 'Voz silenciada — toca para activar';
+  }
+  toast(ttsActivo ? '🔊 Voz activada' : '🔇 Voz silenciada', 'var(--blue)');
+  if(!ttsActivo) window.speechSynthesis.cancel();
+}
+
+// Cargar voces (algunas necesitan trigger)
+if('speechSynthesis' in window){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = ()=>{ window.speechSynthesis.getVoices(); };
+}
+
+function toggleTTSConfig(){
+  const t = document.getElementById('toggle-tts');
+  t.classList.toggle('on');
+  ttsActivo = t.classList.contains('on');
+  DB.ia.ttsActivo = ttsActivo;
+  save();
+  if(!ttsActivo) window.speechSynthesis.cancel();
+  toast(ttsActivo?'🔊 Voz activada':'🔇 Voz silenciada','var(--blue)');
 }
 
 // ════════════════════════════════════════
@@ -2211,17 +2298,36 @@ function onImageSelected(event){
   const reader = new FileReader();
   reader.onload = async (e)=>{
     const dataUrl = e.target.result;
-    scanImageBase64 = dataUrl.split(',')[1];
-    // Mostrar preview
-    document.getElementById('scan-preview-img').src = dataUrl;
-    document.getElementById('scan-preview-wrap').style.display='';
-    document.getElementById('scan-empty-frame').style.display='none';
-    document.getElementById('scan-result').style.display='none';
-    // Analizar con IA
+    const compressed = await comprimirImagen(dataUrl, 800, 0.7);
+    scanImageBase64 = compressed.split(",")[1];
+    document.getElementById("scan-preview-img").src = compressed;
+    document.getElementById("scan-preview-wrap").style.display="";
+    document.getElementById("scan-empty-frame").style.display="none";
+    document.getElementById("scan-result").style.display="none";
     await analizarFactura();
   };
   reader.readAsDataURL(file);
-  event.target.value='';
+  event.target.value="";
+}
+
+function comprimirImagen(dataUrl, maxSize, quality){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      let w=img.width, h=img.height;
+      if(w>maxSize||h>maxSize){
+        if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
+        else{w=Math.round(w*maxSize/h);h=maxSize;}
+      }
+      const canvas=document.createElement("canvas");
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(img,0,0,w,h);
+      resolve(canvas.toDataURL("image/jpeg",quality));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
 }
 
 async function analizarFactura(){
@@ -2291,6 +2397,18 @@ Si no puedes leer la imagen claramente, igual intenta con los datos visibles.`;
       });
       const d = await r.json();
       resultado = parseIAJson(d.choices?.[0]?.message?.content||'{}');
+    } else if(cfg.proveedor==='groq'){
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
+        body:JSON.stringify({
+          model: cfg.modelo||'llama-3.3-70b-versatile',
+          max_tokens:500,
+          messages:[{role:'system',content:buildIASystem()},...iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))]
+        })
+      });
+      const data = await res.json();
+      respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
     } else if(cfg.proveedor==='gemini'){
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.modelo||'gemini-1.5-flash'}:generateContent?key=${cfg.apiKey}`,{
         method:'POST',
