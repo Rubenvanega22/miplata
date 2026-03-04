@@ -462,6 +462,7 @@ select.form-inp option{background:#0c1228;}
           </div>
           <!-- Input oculto para archivo -->
           <input type="file" id="scan-file-camara" accept="image/*" capture="environment" style="display:none" onchange="onImageSelected(event)"/>
+          <input type="file" id="scan-file-camara2" accept="image/jpeg,image/png" capture="environment" style="display:none" onchange="onImageSelected(event)"/>
           <input type="file" id="scan-file-galeria" accept="image/*" style="display:none" onchange="onImageSelected(event)"/>
           <!-- Resultado del análisis -->
           <div id="scan-result" style="display:none">
@@ -1891,79 +1892,136 @@ async function sendIA(){
 
 function buildIASystem(){
   const total = DB.cuentas.reduce((a,c)=>a+c.saldo,0);
-  const movsRecientes = DB.movimientos.slice(0,5).map(m=>`${m.tipo} ${fmtCOP(m.monto)} - ${m.descripcion}`).join(', ');
-  const pendientes = DB.pagos.filter(p=>p.status!=='pagado').length;
+  const hoy = new Date();
+  const mes = hoy.getMonth(), anio = hoy.getFullYear();
+  const movsDelMes = DB.movimientos.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getMonth()===mes&&d.getFullYear()===anio; });
+  const ingresos = movsDelMes.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+m.monto,0);
+  const gastos = movsDelMes.filter(m=>m.tipo==='gasto').reduce((a,m)=>a+m.monto,0);
+  const movsRecientes = DB.movimientos.slice(0,8).map(m=>(m.tipo==='ingreso'?'+':'-')+fmtCOP(m.monto)+' '+m.descripcion+' ('+fmtDate(m.fecha)+')').join('
+');
+  const pagosPend = DB.pagos.filter(p=>p.status!=='pagado').map(p=>p.nombre+' '+fmtCOP(p.monto)+' vence '+fmtDate(p.fechaLimite)).join('
+');
+  const eventosProx = DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5).map(e=>e.titulo+' el '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join('
+');
+  const recordAbiertos = DB.recordatorios.filter(r=>r.status==='open').slice(0,5).map(r=>'['+r.tipo+'] '+r.titulo).join('
+');
+  const cajas = DB.cajas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', ');
   const nombre = DB.ia.usuarioNombre||'usuario';
   const iaName = DB.ia.nombre||'Kontrol';
-  return `Eres ${iaName}, asistente financiero personal de ${nombre}. 
-Contexto actual:
-- Saldo total: ${fmtCOP(total)}
-- Últimos movimientos: ${movsRecientes||'ninguno'}
-- Pagos pendientes: ${pendientes}
-- Cuentas: ${DB.cuentas.map(c=>c.nombre+':'+fmtCOP(c.saldo)).join(', ')||'ninguna'}
-Responde en español, de forma concisa y útil. Si el usuario quiere crear algo, responde con el comando en formato: [ACCION:tipo|dato1|dato2]`;
+  const mesStr = String(mes+1).padStart(2,'0');
+  return 'Eres '+iaName+', asistente financiero personal de '+nombre+'. Tienes acceso COMPLETO a sus finanzas y puedes ejecutar ACCIONES REALES en la app.
+
+Saldo total: '+fmtCOP(total)+'
+Cuentas: '+(DB.cuentas.map(c=>c.nombre+'('+fmtCOP(c.saldo)+')').join(', ')||'ninguna')+'
+Cajas: '+(cajas||'ninguna')+'
+Ingresos del mes: '+fmtCOP(ingresos)+'
+Gastos del mes: '+fmtCOP(gastos)+'
+Balance: '+fmtCOP(ingresos-gastos)+'
+
+Movimientos recientes:
+'+(movsRecientes||'ninguno')+'
+
+Pagos pendientes:
+'+(pagosPend||'ninguno')+'
+
+Agenda proxima:
+'+(eventosProx||'ninguno')+'
+
+Recordatorios:
+'+(recordAbiertos||'ninguno')+'
+
+ACCIONES DISPONIBLES (incluye al final de respuesta):
+[ACCION:gasto|monto|descripcion|categoria]
+[ACCION:ingreso|monto|descripcion|categoria]
+[ACCION:pago|nombre|monto|'+anio+'-'+mesStr+'-DD]
+[ACCION:evento|titulo|'+anio+'-'+mesStr+'-DD|HH:MM]
+[ACCION:recordatorio|nota|titulo]
+[ACCION:lista|titulo|item1,item2]
+[ACCION:navegar|resumen|movimientos|cajas|pagos|agenda|recordar]
+
+Responde siempre en español, tono amigable. Cuando ejecutes una accion confirma que lo hiciste. Nunca digas que no tienes acceso.';
 }
 
 function intentLocal(msg){
   const m = msg.toLowerCase();
   const total = DB.cuentas.reduce((a,c)=>a+c.saldo,0);
   const nombre = DB.ia.usuarioNombre||'';
-
-  if(/cuánto tengo|saldo|dinero tengo/i.test(m)){
-    return `${nombre?nombre+', t':'T'}u saldo total es ${fmtCOP(total)} en ${DB.cuentas.length} cuenta(s).`;
+  const hoy = new Date();
+  if(/cu.nto tengo|saldo total|dinero tengo|mis cuentas/i.test(m)){
+    const txt = DB.cuentas.length?DB.cuentas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', '):'sin cuentas';
+    return (nombre?nombre+', t':'T')+'u saldo total es '+fmtCOP(total)+'. ('+txt+')';
   }
-  if(/pagos pendientes|debo pagar|vencen/i.test(m)){
-    const pend = DB.pagos.filter(p=>p.status!=='pagado');
-    if(!pend.length) return '¡No tienes pagos pendientes! 🎉';
-    return `Tienes ${pend.length} pago(s) pendiente(s): ${pend.map(p=>p.nombre+' '+fmtCOP(p.monto)).join(', ')}.`;
+  if(/pagos pendientes|debo pagar|qu. debo|vencen/i.test(m)){
+    const pend=DB.pagos.filter(p=>p.status!=='pagado');
+    if(!pend.length) return 'No tienes pagos pendientes! 🎉';
+    return 'Tienes '+pend.length+' pago(s) pendiente(s):
+'+pend.map(p=>'• '+p.nombre+': '+fmtCOP(p.monto)+' — vence '+fmtDate(p.fechaLimite)).join('
+');
   }
-  if(/gastos del mes|gasté|gaste este mes/i.test(m)){
-    const hoy=new Date();
-    const g = DB.movimientos.filter(x=>x.tipo==='gasto'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
-    return `Has gastado ${fmtCOP(g)} este mes.`;
+  if(/gastos del mes|gast. este mes|cu.nto gast./i.test(m)){
+    const g=DB.movimientos.filter(x=>x.tipo==='gasto'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
+    return 'Has gastado '+fmtCOP(g)+' este mes.';
   }
-  if(/ingresos del mes|ingresé|gané este mes/i.test(m)){
-    const hoy=new Date();
-    const g = DB.movimientos.filter(x=>x.tipo==='ingreso'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
-    return `Tus ingresos este mes son ${fmtCOP(g)}.`;
+  if(/ingresos del mes|cu.nto gan.|ingres. este mes/i.test(m)){
+    const g=DB.movimientos.filter(x=>x.tipo==='ingreso'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
+    return 'Tus ingresos este mes: '+fmtCOP(g)+'.';
   }
-  // crear gasto rápido: "gasto 50000 mercado"
-  const gastoMatch = m.match(/(?:crear\s+)?gasto\s+([\d.,]+)\s+(.+)/);
-  if(gastoMatch){
-    const monto = parseCOP(gastoMatch[1]);
-    const desc = gastoMatch[2];
-    if(monto>0){
-      DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:desc,monto,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'});
-      if(DB.cuentas[0]) DB.cuentas[0].saldo -= monto;
-      save(); renderResumen();
-      return `✅ Gasto de ${fmtCOP(monto)} por "${desc}" registrado.`;
-    }
+  if(/agenda|eventos|qu. tengo programado/i.test(m)){
+    const evs=DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5);
+    if(!evs.length) return 'No tienes eventos proximos agendados.';
+    return 'Tus proximos eventos:
+'+evs.map(e=>'• '+e.titulo+' — '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join('
+');
   }
-  // crear ingreso rápido
-  const ingresoMatch = m.match(/(?:crear\s+)?ingreso\s+([\d.,]+)\s+(.+)/);
-  if(ingresoMatch){
-    const monto = parseCOP(ingresoMatch[1]);
-    const desc = ingresoMatch[2];
-    if(monto>0){
-      DB.movimientos.unshift({id:uid(),tipo:'ingreso',descripcion:desc,monto,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'});
-      if(DB.cuentas[0]) DB.cuentas[0].saldo += monto;
-      save(); renderResumen();
-      return `✅ Ingreso de ${fmtCOP(monto)} por "${desc}" registrado.`;
-    }
+  if(/recordatorios|qu. tengo pendiente|mis notas/i.test(m)){
+    const recs=DB.recordatorios.filter(r=>r.status==='open').slice(0,5);
+    if(!recs.length) return 'No tienes recordatorios abiertos.';
+    return 'Tus recordatorios:
+'+recs.map(r=>'• ['+r.tipo+'] '+r.titulo).join('
+');
   }
-  // recordatorio rápido
-  if(/recuérdame|recuerda que|recordar/i.test(m)){
-    const txt = msg.replace(/recuérdame|recuerda que|recordar/gi,'').trim();
-    if(txt){ DB.recordatorios.push({id:uid(),tipo:'nota',titulo:txt,content:{texto:txt},fecha:todayStr(),status:'open'}); save(); return `📌 Anotado: "${txt}"`; }
+  if(/cajas|mis cajas|dinero en cajas/i.test(m)){
+    if(!DB.cajas.length) return 'No tienes cajas creadas.';
+    return 'Tus cajas:
+'+DB.cajas.map(c=>'• '+c.nombre+': '+fmtCOP(c.saldo)).join('
+');
+  }
+  const gastoM=m.match(/(?:crear\s+)?(?:registra[r]?\s+)?gasto\s+([\d.,]+)\s+(.+)/);
+  if(gastoM){ const mo=parseCOP(gastoM[1]),desc=gastoM[2].trim(); if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo-=mo; save();renderResumen(); return 'Gasto de '+fmtCOP(mo)+' por "'+desc+'" registrado.'; } }
+  const ingresoM=m.match(/(?:crear\s+)?(?:registra[r]?\s+)?ingreso\s+([\d.,]+)\s+(.+)/);
+  if(ingresoM){ const mo=parseCOP(ingresoM[1]),desc=ingresoM[2].trim(); if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:'ingreso',descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo+=mo; save();renderResumen(); return 'Ingreso de '+fmtCOP(mo)+' por "'+desc+'" registrado.'; } }
+  const agendaM=msg.match(/ag.nda(?:me)?\s+(.+?)\s+(?:el|para el|para)\s+(\d{1,2})/i);
+  if(agendaM){ const titulo=agendaM[1].trim(),dia=agendaM[2].padStart(2,'0'),mes2=String(hoy.getMonth()+1).padStart(2,'0'),fecha=hoy.getFullYear()+'-'+mes2+'-'+dia; DB.eventos.push({id:uid(),titulo,fecha,hora:'',nota:'IA'}); save();renderAgenda();goTab('agenda'); return 'Evento "'+titulo+'" agendado para el '+dia+'/'+mes2+'.'; }
+  if(/rec.érdame|recuerda que/i.test(m)){ const txt=msg.replace(/rec.érdame|recuerda que/gi,'').trim(); if(txt){ DB.recordatorios.push({id:uid(),tipo:'nota',titulo:txt,content:{texto:txt},fecha:todayStr(),status:'open'}); save(); return 'Anotado: "'+txt+'"'; } }
+  const comprarM=m.match(/(?:rec.érdame\s+)?comprar\s+(.+)/i);
+  if(comprarM){ const items=comprarM[1].split(/,|\sy\s/).map(s=>s.trim()).filter(Boolean); DB.recordatorios.push({id:uid(),tipo:'lista',titulo:'Lista de compras',content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar'); return 'Lista creada con: '+items.join(', '); }
+  if(/ir a|ll.vame a|abre|mu.strame/i.test(m)){
+    if(/resumen|inicio/i.test(m)){goTab('resumen');return 'Aqui esta tu resumen.';}
+    if(/movimientos/i.test(m)){goTab('movimientos');return 'Aqui estan tus movimientos.';}
+    if(/pagos/i.test(m)){goTab('pagos');return 'Aqui estan tus pagos.';}
+    if(/agenda|calendario/i.test(m)){goTab('agenda');return 'Aqui esta tu agenda.';}
+    if(/recordatorios|notas/i.test(m)){goTab('recordar');return 'Aqui estan tus recordatorios.';}
+    if(/cajas/i.test(m)){goTab('cajas');return 'Aqui estan tus cajas.';}
+    if(/config/i.test(m)){goTab('config');return 'Aqui esta la configuracion.';}
   }
   return null;
 }
 
 function ejecutarAccionesIA(resp, originalMsg){
-  // Detectar patrones [ACCION:...] en respuesta IA
-  const match = resp.match(/\[ACCION:([^\]]+)\]/);
-  if(!match) return;
-  // Future: parse and execute
+  const matches=[...resp.matchAll(/\[ACCION:([^\]]+)\]/g)];
+  if(!matches.length) return;
+  matches.forEach(match=>{
+    const parts=match[1].split('|'); const accion=parts[0];
+    try{
+      if(accion==='gasto'||accion==='ingreso'){ const mo=parseCOP(parts[1]),desc=parts[2]||'Sin descripcion',cat=parts[3]||'otro'; if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:accion,descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:cat,nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo+=(accion==='ingreso'?mo:-mo); save();renderResumen(); } }
+      else if(accion==='pago'){ const nombre=parts[1],mo=parseCOP(parts[2]),fecha=parts[3]||todayStr(); if(nombre&&mo>0){ DB.pagos.push({id:uid(),nombre,monto:mo,fechaLimite:fecha,categoria:'otro',cuentaId:DB.cuentas[0]?.id||0,fijo:false,status:'pendiente'}); save();renderPagos(); } }
+      else if(accion==='evento'){ const titulo=parts[1],fecha=parts[2]||todayStr(),hora=parts[3]||''; if(titulo){ DB.eventos.push({id:uid(),titulo,fecha,hora,nota:'IA'}); save();renderAgenda();goTab('agenda'); } }
+      else if(accion==='recordatorio'){ const tipo=parts[1]||'nota',titulo=parts[2]; if(titulo){ DB.recordatorios.push({id:uid(),tipo,titulo,content:{texto:titulo},fecha:todayStr(),status:'open'}); save();renderRecordatorios(); } }
+      else if(accion==='lista'){ const titulo=parts[1]||'Lista',items=(parts[2]||'').split(',').map(s=>s.trim()).filter(Boolean); DB.recordatorios.push({id:uid(),tipo:'lista',titulo,content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar'); }
+      else if(accion==='navegar'){ if(parts[1])goTab(parts[1]); }
+      else if(accion==='pagarpago'){ const p=DB.pagos.find(x=>x.id===parseInt(parts[1])); if(p&&p.status!=='pagado'){ p.status='pagado'; DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:'Pago: '+p.nombre,monto:p.monto,fecha:todayStr(),cuentaId:p.cuentaId,categoria:'servicios',nota:'IA',source:'pago'}); const ct=DB.cuentas.find(c=>c.id===p.cuentaId); if(ct)ct.saldo-=p.monto; save();renderPagos();renderResumen(); } }
+    } catch(e){ console.log('Error accion IA:',e); }
+  });
 }
 
 function toggleMic(){
@@ -2298,7 +2356,8 @@ function onImageSelected(event){
   const reader = new FileReader();
   reader.onload = async (e)=>{
     const dataUrl = e.target.result;
-    const compressed = await comprimirImagen(dataUrl, 800, 0.7);
+    // Comprimir agresivo: max 500px, calidad 0.5 para celulares con poca RAM
+    const compressed = await comprimirImagen(dataUrl, 500, 0.5);
     scanImageBase64 = compressed.split(",")[1];
     document.getElementById("scan-preview-img").src = compressed;
     document.getElementById("scan-preview-wrap").style.display="";
@@ -2315,15 +2374,19 @@ function comprimirImagen(dataUrl, maxSize, quality){
     const img = new Image();
     img.onload = ()=>{
       let w=img.width, h=img.height;
-      if(w>maxSize||h>maxSize){
-        if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
-        else{w=Math.round(w*maxSize/h);h=maxSize;}
-      }
+      // Siempre reducir al maxSize aunque sea más pequeña
+      if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
+      else{w=Math.round(w*maxSize/h);h=maxSize;}
+      // Mínimo 200px
+      if(w<200){w=200;} if(h<200){h=200;}
       const canvas=document.createElement("canvas");
       canvas.width=w; canvas.height=h;
       const ctx=canvas.getContext("2d");
       ctx.drawImage(img,0,0,w,h);
-      resolve(canvas.toDataURL("image/jpeg",quality));
+      const result = canvas.toDataURL("image/jpeg", quality);
+      // Liberar memoria
+      canvas.width=0; canvas.height=0;
+      resolve(result);
     };
     img.onerror=()=>resolve(dataUrl);
     img.src=dataUrl;
