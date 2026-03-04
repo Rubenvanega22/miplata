@@ -2119,7 +2119,8 @@ function onIAProveedorChange(){
       <div class="form-group"><label class="form-label">API Key de Groq</label><input class="form-inp" id="ia-apikey" type="password" placeholder="gsk_…" value="${DB.ia.apiKey||''}"/></div>
       <div class="form-group"><label class="form-label">Modelo</label>
         <select class="form-inp" id="ia-modelo">
-          <option value="meta-llama/llama-4-scout-17b-16e-instruct" ${DB.ia.modelo==='meta-llama/llama-4-scout-17b-16e-instruct'?'selected':''}>Llama 4 Scout (visión) ⭐</option>
+          <option value="llama-3.2-11b-vision-preview" ${DB.ia.modelo==='llama-3.2-11b-vision-preview'?'selected':''}>Llama 3.2 11B Vision ⭐ (facturas)</option>
+          <option value="llama-3.2-90b-vision-preview" ${DB.ia.modelo==='llama-3.2-90b-vision-preview'?'selected':''}>Llama 3.2 90B Vision (más preciso)</option>
           <option value="llama-3.3-70b-versatile" ${DB.ia.modelo==='llama-3.3-70b-versatile'?'selected':''}>Llama 3.3 70B (chat)</option>
           <option value="llama-3.1-8b-instant" ${DB.ia.modelo==='llama-3.1-8b-instant'?'selected':''}>Llama 3.1 8B (rápido)</option>
         </select>
@@ -2251,7 +2252,7 @@ Si no puedes leer la imagen claramente, igual intenta con los datos visibles.`;
     let resultado = null;
 
     if(cfg.proveedor==='groq'){
-      const modelo = cfg.modelo||'meta-llama/llama-4-scout-17b-16e-instruct';
+      const modelo = cfg.modelo||'llama-3.2-11b-vision-preview';
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
@@ -2268,6 +2269,11 @@ Si no puedes leer la imagen claramente, igual intenta con los datos visibles.`;
         })
       });
       const d = await r.json();
+      if(d.error){ 
+        document.getElementById('scan-loading').style.display='none';
+        toast('❌ Groq: '+d.error.message,'var(--red)'); 
+        return; 
+      }
       const raw = d.choices?.[0]?.message?.content||'{}';
       resultado = parseIAJson(raw);
     } else if(cfg.proveedor==='openai'){
