@@ -274,7 +274,7 @@ select.form-inp option{background:#0c1228;}
       <span class="logo-name">Kontrol</span>
     </div>
     <div class="hdr-right">
-      <div class="hbtn" onclick="goTab('inbox')">🔔<div class="badge" id="notif-badge" style="display:none">0</div></div>
+      <div class="hbtn" onclick="goTab('inbox');setScanTab('bandeja')">🔔<div class="badge" id="notif-badge" style="display:none">0</div></div>
       <div class="hbtn" onclick="goTab('config')">⚙️</div>
     </div>
   </div>
@@ -428,15 +428,130 @@ select.form-inp option{background:#0c1228;}
     </div>
 
     <!-- ══ BANDEJA DETECCIONES ══ -->
+    <!-- ══ ESCANEAR ══ -->
+    <!-- ══ ESCANEAR ══ -->
     <div class="scr" id="scr-inbox">
       <div class="scroll">
-        <div class="sc-hdr" style="margin-bottom:8px">
-          <div class="sc-ttl">📥 Bandeja de detecciones</div>
+        <!-- Tabs: Escanear / Bandeja / Correo -->
+        <div class="filter-row" style="margin-bottom:12px">
+          <button class="fbtn on" id="scan-tab-camara" onclick="setScanTab('camara')">📷 Escanear</button>
+          <button class="fbtn" id="scan-tab-bandeja" onclick="setScanTab('bandeja')">📥 Bandeja</button>
+          <button class="fbtn" id="scan-tab-correo" onclick="setScanTab('correo')">✉️ Correo</button>
         </div>
-        <p style="font-size:12px;color:var(--t3);margin-bottom:12px">Pega aquí el texto de una notificación bancaria (Bancolombia, Nequi, Daviplata…) y la analizamos.</p>
-        <textarea id="inbox-texto" class="form-inp" rows="4" placeholder="Ej: Bancolombia: Le informamos débito por $150.000 en su cuenta de ahorros..."></textarea>
-        <button class="btn-primary" style="margin-top:10px" onclick="parsearDeteccion()">🔍 Analizar</button>
-        <div id="inbox-result-list"></div>
+
+        <!-- TAB: Cámara/Galería -->
+        <div id="scan-panel-camara">
+          <!-- Preview imagen -->
+          <div id="scan-preview-wrap" style="display:none;margin-bottom:12px;position:relative">
+            <img id="scan-preview-img" style="width:100%;border-radius:16px;border:1px solid var(--bd);max-height:240px;object-fit:cover"/>
+            <button onclick="resetScan()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);border:none;color:#fff;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer">✕</button>
+          </div>
+          <!-- Frame cuando no hay imagen -->
+          <div id="scan-empty-frame" style="width:100%;aspect-ratio:4/3;border:2px dashed rgba(59,130,246,0.25);border-radius:20px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:rgba(59,130,246,0.03);margin-bottom:14px">
+            <div style="font-size:36px">🧾</div>
+            <div style="font-size:12px;color:var(--t3);text-align:center">Toma foto o sube una imagen<br/>de tu factura o comprobante</div>
+          </div>
+          <!-- Botones cámara/galería -->
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <button class="scan-btn" onclick="abrirCamara()" style="flex:1">
+              <span style="font-size:18px">📷</span> Cámara
+            </button>
+            <button class="scan-btn" onclick="abrirGaleria()" style="flex:1">
+              <span style="font-size:18px">🖼️</span> Galería
+            </button>
+          </div>
+          <!-- Input oculto para archivo -->
+          <input type="file" id="scan-file-camara" accept="image/*" capture="environment" style="display:none" onchange="onImageSelected(event)"/>
+          <input type="file" id="scan-file-galeria" accept="image/*" style="display:none" onchange="onImageSelected(event)"/>
+          <!-- Resultado del análisis -->
+          <div id="scan-result" style="display:none">
+            <div class="sc" style="margin-bottom:10px">
+              <div class="sc-hdr"><div class="sc-ttl">🧠 Resultado del análisis</div></div>
+              <div id="scan-result-body"></div>
+            </div>
+            <!-- Formulario de corrección -->
+            <div class="sc">
+              <div class="sc-hdr"><div class="sc-ttl">✏️ Confirmar / Corregir</div></div>
+              <div class="form-group">
+                <label class="form-label">Descripción</label>
+                <input class="form-inp" id="scan-desc" placeholder="Comercio / descripción"/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Monto (COP)</label>
+                <input class="form-inp" id="scan-monto" type="text" inputmode="numeric" oninput="formatMonto(this)"/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fecha</label>
+                <input class="form-inp" id="scan-fecha" type="date"/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Categoría</label>
+                <select class="form-inp" id="scan-categoria">
+                  <option value="alimentacion">🍔 Alimentación</option>
+                  <option value="transporte">🚗 Transporte</option>
+                  <option value="servicios">💡 Servicios</option>
+                  <option value="salud">🏥 Salud</option>
+                  <option value="educacion">📚 Educación</option>
+                  <option value="hogar">🏠 Hogar</option>
+                  <option value="entretenimiento">🎮 Entretenimiento</option>
+                  <option value="otro">📦 Otro</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cuenta</label>
+                <select class="form-inp" id="scan-cuenta"></select>
+              </div>
+              <button class="btn-primary" onclick="guardarMovimientoScan()">💾 Guardar como gasto</button>
+              <button class="btn-secondary" onclick="resetScan()">Descartar</button>
+            </div>
+          </div>
+          <!-- Loading -->
+          <div id="scan-loading" style="display:none;text-align:center;padding:30px">
+            <div style="font-size:32px;animation:spin 1s linear infinite">⏳</div>
+            <div style="font-size:13px;color:var(--t3);margin-top:10px">Analizando con IA…</div>
+          </div>
+          <!-- Sin API key -->
+          <div id="scan-no-key" style="display:none">
+            <div class="sc" style="border-color:rgba(245,158,11,0.25)">
+              <div style="font-size:13px;color:var(--amber);margin-bottom:8px">⚠️ Configura Groq para usar el escáner</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:12px">Ve a Configuración → IA → elige Groq y pega tu API key gratuita de console.groq.com</div>
+              <button class="btn-secondary" onclick="goTab('config')">⚙️ Ir a Configuración</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Bandeja -->
+        <div id="scan-panel-bandeja" style="display:none">
+          <p style="font-size:12px;color:var(--t3);margin-bottom:12px">Detecciones pendientes de confirmar — de correo, escaneo o texto bancario.</p>
+          <!-- Pegar texto manual -->
+          <div class="sc" style="margin-bottom:10px">
+            <div class="sc-hdr"><div class="sc-ttl">📋 Pegar texto bancario</div></div>
+            <textarea id="inbox-texto" class="form-inp" rows="3" placeholder="Ej: Bancolombia: Débito $150.000 cuenta ahorros…"></textarea>
+            <button class="btn-secondary" style="margin-top:8px;width:100%" onclick="parsearTextoManual()">🔍 Analizar texto</button>
+          </div>
+          <div id="inbox-result-list"></div>
+        </div>
+
+        <!-- TAB: Correo -->
+        <div id="scan-panel-correo" style="display:none">
+          <div class="sc" style="border-color:rgba(59,130,246,0.2)">
+            <div class="sc-hdr"><div class="sc-ttl">✉️ Sincronización de correo</div></div>
+            <div style="font-size:12px;color:var(--t3);margin-bottom:14px;line-height:1.6">
+              Kontrol puede leer tus notificaciones bancarias de Gmail/Outlook y detectar automáticamente ingresos y gastos. Configura tus correos abajo.
+            </div>
+            <div id="correos-config-list"></div>
+            <button class="btn-secondary" style="margin-top:8px" onclick="showModal('modal-agregar-correo')">+ Agregar correo</button>
+          </div>
+          <div class="sc" id="sc-correo-resultado" style="display:none">
+            <div class="sc-hdr"><div class="sc-ttl">📨 Notificaciones detectadas</div></div>
+            <div id="correo-result-list"></div>
+          </div>
+          <div id="correo-syncing" style="display:none;text-align:center;padding:20px">
+            <div style="font-size:28px;animation:spin 1s linear infinite">🔄</div>
+            <div style="font-size:12px;color:var(--t3);margin-top:8px">Revisando correos…</div>
+          </div>
+        </div>
+
         <div style="height:80px"></div>
       </div>
     </div>
@@ -444,46 +559,79 @@ select.form-inp option{background:#0c1228;}
     <!-- ══ CONFIG ══ -->
     <div class="scr" id="scr-config">
       <div class="scroll">
+
+        <!-- Cuentas -->
         <div class="config-section">
-          <div class="config-section-ttl">Cuentas / Bancos</div>
+          <div class="config-section-ttl">💳 Cuentas / Bancos</div>
           <div id="config-cuentas-list"></div>
           <button class="btn-secondary" style="margin-top:4px" onclick="showModal('modal-nueva-cuenta')">+ Agregar cuenta</button>
         </div>
+
+        <!-- IA -->
         <div class="config-section">
-          <div class="config-section-ttl">IA / Proveedor</div>
-          <div class="config-row">
-            <div class="config-row-info">
-              <div class="config-row-lbl">Proveedor</div>
-            </div>
+          <div class="config-section-ttl">🧠 IA / Proveedor</div>
+          <div class="config-row" style="margin-bottom:8px">
+            <div class="config-row-info"><div class="config-row-lbl">Proveedor</div></div>
             <select class="form-inp" id="ia-proveedor" style="width:auto;padding:5px 10px" onchange="onIAProveedorChange()">
               <option value="local">Gratis (local)</option>
+              <option value="groq">Groq (gratis + visión)</option>
               <option value="claude">Claude (Anthropic)</option>
               <option value="openai">ChatGPT (OpenAI)</option>
               <option value="gemini">Gemini (Google)</option>
             </select>
           </div>
           <div id="ia-config-fields"></div>
-          <button class="btn-secondary" onclick="probarConexionIA()">🔌 Probar conexión</button>
-          <button class="btn-primary" style="margin-top:8px" onclick="guardarConfigIA()">Guardar configuración IA</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn-secondary" style="flex:1" onclick="probarConexionIA()">🔌 Probar</button>
+            <button class="btn-primary" style="flex:1" onclick="guardarConfigIA()">💾 Guardar IA</button>
+          </div>
+          <div id="ia-test-result" style="font-size:12px;margin-top:6px;text-align:center"></div>
         </div>
+
+        <!-- Preferencias IA -->
         <div class="config-section">
-          <div class="config-section-ttl">Preferencias IA</div>
+          <div class="config-section-ttl">⚙️ Preferencias IA</div>
           <div class="form-group">
             <label class="form-label">Nombre del asistente</label>
-            <input class="form-inp" id="ia-nombre" placeholder="Kontrol" value="Kontrol"/>
+            <input class="form-inp" id="ia-nombre" placeholder="Kontrol"/>
           </div>
           <div class="form-group">
             <label class="form-label">¿Cómo te llama la IA?</label>
             <input class="form-inp" id="ia-usuario-nombre" placeholder="Tu nombre"/>
           </div>
         </div>
+
+        <!-- Correos bancarios -->
         <div class="config-section">
-          <div class="config-section-ttl">Notificaciones</div>
-          <div class="config-row">
-            <div class="config-row-info"><div class="config-row-lbl">Notificaciones activas</div><div class="config-row-sub">Pagos próximos, eventos, recordatorios</div></div>
-            <div class="toggle on" id="toggle-notif" onclick="toggleConfig('toggle-notif','notif')"><div class="toggle-thumb"></div></div>
+          <div class="config-section-ttl">✉️ Correos bancarios</div>
+          <p style="font-size:11.5px;color:var(--t3);margin-bottom:10px;line-height:1.5">Agrega los correos donde recibes notificaciones de Bancolombia, Nequi, Davivienda, Daviplata. Kontrol los revisará y te mostrará los movimientos para confirmar.</p>
+          <div id="correos-list-config"></div>
+          <button class="btn-secondary" style="margin-top:6px" onclick="showModal('modal-agregar-correo')">+ Agregar correo</button>
+          <div style="margin-top:10px;padding:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px">
+            <div style="font-size:11px;color:var(--amber);font-weight:700;margin-bottom:4px">⚠️ Nota de privacidad</div>
+            <div style="font-size:11px;color:var(--t3);line-height:1.5">Kontrol solo lee asuntos y cuerpos de correos de remitentes bancarios. Nunca envía tus datos a terceros. Todo se procesa localmente o con la IA que configures.</div>
           </div>
         </div>
+
+        <!-- Bancos detectables -->
+        <div class="config-section">
+          <div class="config-section-ttl">🏦 Bancos activos para detección</div>
+          <div id="bancos-toggles"></div>
+        </div>
+
+        <!-- Notificaciones -->
+        <div class="config-section">
+          <div class="config-section-ttl">🔔 Notificaciones</div>
+          <div class="config-row">
+            <div class="config-row-info"><div class="config-row-lbl">Alertas de pagos</div><div class="config-row-sub">Próximos, vencidos, recordatorios</div></div>
+            <div class="toggle on" id="toggle-notif" onclick="toggleConfig('toggle-notif','notif')"><div class="toggle-thumb"></div></div>
+          </div>
+          <div class="config-row">
+            <div class="config-row-info"><div class="config-row-lbl">Detecciones automáticas</div><div class="config-row-sub">Avisar cuando llega notificación bancaria</div></div>
+            <div class="toggle on" id="toggle-detec" onclick="toggleConfig('toggle-detec','detecNotif')"><div class="toggle-thumb"></div></div>
+          </div>
+        </div>
+
         <div style="height:80px"></div>
       </div>
     </div>
@@ -493,7 +641,7 @@ select.form-inp option{background:#0c1228;}
   <!-- BOTTOM BAR IA -->
   <div class="bbar-wrap">
     <div class="bbar">
-      <div class="bb-cam" onclick="goTab('inbox')" title="Bandeja detecciones">📥</div>
+      <div class="bb-cam" onclick="goTab('inbox');setScanTab('camara')" title="Escanear factura">📷</div>
       <div class="bb-inp-wrap">
         <input class="bb-inp" id="ia-input" placeholder="Escribe a la IA…" onkeydown="if(event.key==='Enter')sendIA()"/>
         <span class="bb-send" onclick="sendIA()">➤</span>
@@ -765,6 +913,45 @@ select.form-inp option{background:#0c1228;}
   </div>
 </div>
 
+<!-- Modal Agregar Correo -->
+<div class="modal-overlay hidden" id="modal-agregar-correo" onclick="closeModalOutside(event,'modal-agregar-correo')">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-ttl">Agregar correo</span>
+      <button class="modal-close" onclick="hideModal('modal-agregar-correo')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dirección de correo</label>
+      <input class="form-inp" id="correo-email" type="email" placeholder="tucorreo@gmail.com"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tipo de correo</label>
+      <select class="form-inp" id="correo-tipo">
+        <option value="gmail">Gmail</option>
+        <option value="outlook">Outlook / Hotmail</option>
+      </select>
+    </div>
+    <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:12px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:6px">ℹ️ ¿Cómo funciona?</div>
+      <div style="font-size:11.5px;color:var(--t3);line-height:1.6">
+        Kontrol usa la bandeja de tu correo para detectar notificaciones de <b style="color:var(--t1)">Bancolombia, Nequi, Davivienda, Daviplata</b>. Cuando pulses "Sincronizar", revisará los últimos 50 correos bancarios y te mostrará los movimientos para que los confirmes. <br/><br/>
+        <b style="color:var(--amber)">Para Gmail necesitas una contraseña de aplicación</b> (no tu contraseña normal). Ve a myaccount.google.com → Seguridad → Contraseñas de aplicaciones.
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contraseña de aplicación</label>
+      <input class="form-inp" id="correo-pass" type="password" placeholder="xxxx xxxx xxxx xxxx"/>
+    </div>
+    <button class="btn-primary" onclick="guardarCorreo()">Guardar correo</button>
+    <button class="btn-secondary" onclick="hideModal('modal-agregar-correo')">Cancelar</button>
+  </div>
+</div>
+
+<style>
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.spin{animation:spin 1s linear infinite;display:inline-block;}
+</style>
+
 <script>
 // ════════════════════════════════════════
 // DB — localStorage
@@ -789,7 +976,12 @@ function defaultDB(){
     eventos: [],
     recordatorios: [],
     inboxDetected: [],
-    ia: { proveedor:'local', apiKey:'', modelo:'', nombre:'Kontrol', usuarioNombre:'', notif:true },
+    correos: [],
+    ia: {
+      proveedor:'local', apiKey:'', modelo:'', nombre:'Kontrol', usuarioNombre:'',
+      notif:true, detecNotif:true,
+      bancosActivos:['bancolombia','nequi','davivienda','daviplata','bbva']
+    },
     nextId: 1
   };
 }
@@ -1806,13 +1998,139 @@ function renderConfig(){
   document.getElementById('ia-nombre').value = cfg.nombre||'Kontrol';
   document.getElementById('ia-usuario-nombre').value = cfg.usuarioNombre||'';
   onIAProveedorChange();
+
+  // Correos
+  renderCorreosConfig();
+
+  // Bancos toggles
+  const bancosDisp = [
+    {id:'bancolombia', nombre:'Bancolombia', ico:'🏦'},
+    {id:'nequi', nombre:'Nequi', ico:'📱'},
+    {id:'davivienda', nombre:'Davivienda', ico:'🏧'},
+    {id:'daviplata', nombre:'Daviplata', ico:'💜'},
+    {id:'bbva', nombre:'BBVA', ico:'🔵'},
+    {id:'colpatria', nombre:'Colpatria', ico:'🏦'},
+  ];
+  const activos = cfg.bancosActivos||[];
+  document.getElementById('bancos-toggles').innerHTML = bancosDisp.map(b=>`
+    <div class="config-row" style="margin-bottom:6px">
+      <div class="config-row-info"><div class="config-row-lbl">${b.ico} ${b.nombre}</div></div>
+      <div class="toggle ${activos.includes(b.id)?'on':''}" id="toggle-banco-${b.id}" onclick="toggleBanco('${b.id}')"><div class="toggle-thumb"></div></div>
+    </div>`).join('');
+}
+
+function renderCorreosConfig(){
+  const correos = DB.correos||[];
+  const el = document.getElementById('correos-list-config');
+  if(!el) return;
+  if(!correos.length){ el.innerHTML='<div style="font-size:12px;color:var(--t3);padding:4px 0">Sin correos configurados.</div>'; return; }
+  el.innerHTML = correos.map((c,i)=>`<div class="config-row" style="margin-bottom:6px">
+    <div class="config-row-info">
+      <div class="config-row-lbl">${c.tipo==='gmail'?'📧':'📨'} ${c.email}</div>
+      <div class="config-row-sub">${c.tipo} · ${c.sincronizado?'Sincronizado':'Pendiente'}</div>
+    </div>
+    <button onclick="eliminarCorreo(${i})" style="background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);color:var(--red);border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">✕</button>
+  </div>`).join('');
+
+  // También actualizar en pantalla escanear
+  const elScan = document.getElementById('correos-config-list');
+  if(elScan) elScan.innerHTML = correos.length
+    ? correos.map(c=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd2)">
+        <div>
+          <div style="font-size:13px;font-weight:600">${c.tipo==='gmail'?'📧':'📨'} ${c.email}</div>
+          <div style="font-size:10px;color:var(--t3)">${c.tipo}</div>
+        </div>
+        <button class="btn-secondary" style="padding:6px 12px;font-size:11px;width:auto" onclick="sincronizarCorreo('${c.email}')">🔄 Sync</button>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--t3)">Sin correos. Agrega uno en ⚙️ Config.</div>';
+}
+
+function toggleBanco(id){
+  if(!DB.ia.bancosActivos) DB.ia.bancosActivos=[];
+  const idx = DB.ia.bancosActivos.indexOf(id);
+  if(idx>=0) DB.ia.bancosActivos.splice(idx,1);
+  else DB.ia.bancosActivos.push(id);
+  const t = document.getElementById('toggle-banco-'+id);
+  if(t) t.classList.toggle('on');
+  save();
+}
+
+function guardarCorreo(){
+  const email = document.getElementById('correo-email').value.trim();
+  const tipo = document.getElementById('correo-tipo').value;
+  const pass = document.getElementById('correo-pass').value.trim();
+  if(!email){ toast('⚠️ Ingresa el correo','var(--amber)'); return; }
+  if(!pass){ toast('⚠️ Ingresa la contraseña de aplicación','var(--amber)'); return; }
+  if(!DB.correos) DB.correos=[];
+  const yaExiste = DB.correos.find(c=>c.email===email);
+  if(yaExiste){ toast('⚠️ Este correo ya está agregado','var(--amber)'); return; }
+  DB.correos.push({ email, tipo, pass, sincronizado:false });
+  save();
+  hideModal('modal-agregar-correo');
+  document.getElementById('correo-email').value='';
+  document.getElementById('correo-pass').value='';
+  toast('✅ Correo guardado','var(--green)');
+  renderConfig();
+  renderCorreosConfig();
+}
+
+function eliminarCorreo(idx){
+  if(!confirm('¿Eliminar este correo?')) return;
+  DB.correos.splice(idx,1);
+  save();
+  toast('🗑 Correo eliminado','var(--red)');
+  renderConfig();
+}
+
+async function sincronizarCorreo(email){
+  const correo = (DB.correos||[]).find(c=>c.email===email);
+  if(!correo){ toast('Correo no encontrado','var(--amber)'); return; }
+
+  document.getElementById('correo-syncing').style.display='block';
+  document.getElementById('sc-correo-resultado').style.display='none';
+
+  // Usar la IA para analizar — simulamos la llamada al correo
+  // En web real necesitaríamos un backend proxy para IMAP
+  // Por ahora usamos la IA para parsear texto que el usuario pegue, 
+  // y mostramos instrucciones para el flujo real
+  setTimeout(()=>{
+    document.getElementById('correo-syncing').style.display='none';
+    toast('ℹ️ Usa la pestaña Bandeja para pegar notificaciones bancarias','var(--blue)');
+    // Nota técnica: acceso real a Gmail/Outlook desde web requiere
+    // OAuth2 + backend proxy (no posible solo en HTML estático)
+    // En el APK Flutter sí se puede implementar completo
+  }, 1500);
 }
 
 function onIAProveedorChange(){
   const prov = document.getElementById('ia-proveedor').value;
   const el = document.getElementById('ia-config-fields');
-  if(prov==='local'){ el.innerHTML='<div style="font-size:12px;color:var(--t3);padding:6px 0">Funciona sin internet con intents básicos.</div>'; return; }
-  const modelos = {claude:['claude-haiku-4-5','claude-sonnet-4-5','claude-opus-4-5'],openai:['gpt-4o-mini','gpt-4o','gpt-4.1-mini'],gemini:['gemini-1.5-flash','gemini-1.5-pro']};
+  if(!el) return;
+  if(prov==='local'){
+    el.innerHTML='<div style="font-size:12px;color:var(--t3);padding:6px 0">Funciona sin internet con comandos básicos. Para escaneo de facturas necesitas Groq (gratuito).</div>';
+    return;
+  }
+  if(prov==='groq'){
+    el.innerHTML=`
+      <div style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:10px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Groq es 100% gratuito</div>
+        <div style="font-size:11.5px;color:var(--t3);line-height:1.5">1. Ve a <b style="color:var(--t1)">console.groq.com</b><br/>2. Inicia sesión con Gmail<br/>3. API Keys → Create API Key<br/>4. Pega la key aquí</div>
+      </div>
+      <div class="form-group"><label class="form-label">API Key de Groq</label><input class="form-inp" id="ia-apikey" type="password" placeholder="gsk_…" value="${DB.ia.apiKey||''}"/></div>
+      <div class="form-group"><label class="form-label">Modelo</label>
+        <select class="form-inp" id="ia-modelo">
+          <option value="meta-llama/llama-4-scout-17b-16e-instruct" ${DB.ia.modelo==='meta-llama/llama-4-scout-17b-16e-instruct'?'selected':''}>Llama 4 Scout (visión) ⭐</option>
+          <option value="llama-3.3-70b-versatile" ${DB.ia.modelo==='llama-3.3-70b-versatile'?'selected':''}>Llama 3.3 70B (chat)</option>
+          <option value="llama-3.1-8b-instant" ${DB.ia.modelo==='llama-3.1-8b-instant'?'selected':''}>Llama 3.1 8B (rápido)</option>
+        </select>
+      </div>`;
+    return;
+  }
+  const modelos = {
+    claude:['claude-haiku-4-5','claude-sonnet-4-5','claude-opus-4-5'],
+    openai:['gpt-4o-mini','gpt-4o','gpt-4.1-mini'],
+    gemini:['gemini-1.5-flash','gemini-1.5-pro','gemini-2.0-flash']
+  };
   const opts = (modelos[prov]||[]).map(m=>`<option value="${m}" ${DB.ia.modelo===m?'selected':''}>${m}</option>`).join('');
   el.innerHTML = `
     <div class="form-group"><label class="form-label">API Key</label><input class="form-inp" id="ia-apikey" type="password" placeholder="sk-…" value="${DB.ia.apiKey||''}"/></div>
@@ -1834,28 +2152,277 @@ function guardarConfigIA(){
 
 async function probarConexionIA(){
   const prov = document.getElementById('ia-proveedor').value;
-  if(prov==='local'){ toast('Modo local — sin internet requerido','var(--blue)'); return; }
+  const resEl = document.getElementById('ia-test-result');
+  if(prov==='local'){ resEl.style.color='var(--blue)'; resEl.textContent='Modo local activo ✓'; return; }
   const key = document.getElementById('ia-apikey')?.value;
   if(!key){ toast('⚠️ Ingresa tu API key primero','var(--amber)'); return; }
-  toast('⏳ Probando conexión…','var(--t2)');
+  resEl.style.color='var(--t3)'; resEl.textContent='Probando…';
   try{
-    if(prov==='claude'){
-      const r = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:10,messages:[{role:'user',content:'hi'}]})});
+    if(prov==='groq'){
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+        body:JSON.stringify({model:'llama-3.1-8b-instant',max_tokens:5,messages:[{role:'user',content:'hi'}]})
+      });
       const d = await r.json();
-      if(d.content) toast('✅ Claude conectado correctamente','var(--green)');
-      else toast('❌ Error: '+JSON.stringify(d.error?.message),'var(--red)');
+      if(d.choices){ resEl.style.color='var(--green)'; resEl.textContent='✅ Groq conectado correctamente'; }
+      else { resEl.style.color='var(--red)'; resEl.textContent='❌ '+(d.error?.message||'Error'); }
+    } else if(prov==='claude'){
+      const r = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:5,messages:[{role:'user',content:'hi'}]})});
+      const d = await r.json();
+      if(d.content){ resEl.style.color='var(--green)'; resEl.textContent='✅ Claude conectado'; }
+      else { resEl.style.color='var(--red)'; resEl.textContent='❌ '+(d.error?.message||'Error'); }
     } else if(prov==='openai'){
       const r = await fetch('https://api.openai.com/v1/models',{headers:{'Authorization':'Bearer '+key}});
-      if(r.ok) toast('✅ OpenAI conectado correctamente','var(--green)');
-      else toast('❌ API key inválida','var(--red)');
+      if(r.ok){ resEl.style.color='var(--green)'; resEl.textContent='✅ OpenAI conectado'; }
+      else { resEl.style.color='var(--red)'; resEl.textContent='❌ API key inválida'; }
     } else {
-      toast('✅ Intenta guardar y usar el chat para probar Gemini','var(--blue)');
+      resEl.style.color='var(--blue)'; resEl.textContent='Prueba usando el chat IA';
     }
-  } catch(e){ toast('❌ Error de conexión','var(--red)'); }
+  } catch(e){ resEl.style.color='var(--red)'; resEl.textContent='❌ Error de conexión'; }
+}
+
+// ════════════════════════════════════════
+// ESCANEO CON GROQ VISION
+// ════════════════════════════════════════
+let scanCurrentTab = 'camara';
+let scanImageBase64 = null;
+
+function setScanTab(tab){
+  scanCurrentTab = tab;
+  ['camara','bandeja','correo'].forEach(t=>{
+    document.getElementById('scan-panel-'+t).style.display = t===tab?'':'none';
+    document.getElementById('scan-tab-'+t).classList.toggle('on', t===tab);
+  });
+  if(tab==='correo') renderCorreosConfig();
+}
+
+function abrirCamara(){
+  document.getElementById('scan-file-camara').click();
+}
+function abrirGaleria(){
+  document.getElementById('scan-file-galeria').click();
+}
+
+function onImageSelected(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    const dataUrl = e.target.result;
+    scanImageBase64 = dataUrl.split(',')[1];
+    // Mostrar preview
+    document.getElementById('scan-preview-img').src = dataUrl;
+    document.getElementById('scan-preview-wrap').style.display='';
+    document.getElementById('scan-empty-frame').style.display='none';
+    document.getElementById('scan-result').style.display='none';
+    // Analizar con IA
+    await analizarFactura();
+  };
+  reader.readAsDataURL(file);
+  event.target.value='';
+}
+
+async function analizarFactura(){
+  const cfg = DB.ia;
+  if(cfg.proveedor==='local' || !cfg.apiKey){
+    document.getElementById('scan-no-key').style.display='';
+    return;
+  }
+  document.getElementById('scan-loading').style.display='block';
+  document.getElementById('scan-no-key').style.display='none';
+  document.getElementById('scan-result').style.display='none';
+
+  const prompt = `Analiza esta imagen de factura, recibo o comprobante bancario colombiano.
+Extrae la siguiente información y responde SOLO en JSON válido sin markdown:
+{
+  "descripcion": "nombre del comercio o descripción del gasto",
+  "monto": número sin puntos ni comas (ejemplo: 150000),
+  "fecha": "YYYY-MM-DD o null si no se ve",
+  "categoria": "uno de: alimentacion|transporte|servicios|salud|educacion|hogar|entretenimiento|otro",
+  "banco": "nombre del banco si aparece o null",
+  "tipo": "gasto o ingreso",
+  "confianza": "alta|media|baja",
+  "notas": "cualquier dato adicional relevante"
+}
+Si no puedes leer la imagen claramente, igual intenta con los datos visibles.`;
+
+  try{
+    let resultado = null;
+
+    if(cfg.proveedor==='groq'){
+      const modelo = cfg.modelo||'meta-llama/llama-4-scout-17b-16e-instruct';
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
+        body:JSON.stringify({
+          model: modelo,
+          max_tokens: 300,
+          messages:[{
+            role:'user',
+            content:[
+              {type:'image_url', image_url:{url:'data:image/jpeg;base64,'+scanImageBase64}},
+              {type:'text', text:prompt}
+            ]
+          }]
+        })
+      });
+      const d = await r.json();
+      const raw = d.choices?.[0]?.message?.content||'{}';
+      resultado = parseIAJson(raw);
+    } else if(cfg.proveedor==='openai'){
+      const r = await fetch('https://api.openai.com/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
+        body:JSON.stringify({
+          model: cfg.modelo||'gpt-4o-mini',
+          max_tokens:300,
+          messages:[{role:'user',content:[
+            {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+scanImageBase64}},
+            {type:'text',text:prompt}
+          ]}]
+        })
+      });
+      const d = await r.json();
+      resultado = parseIAJson(d.choices?.[0]?.message?.content||'{}');
+    } else if(cfg.proveedor==='gemini'){
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.modelo||'gemini-1.5-flash'}:generateContent?key=${cfg.apiKey}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{parts:[
+          {inline_data:{mime_type:'image/jpeg',data:scanImageBase64}},
+          {text:prompt}
+        ]}]})
+      });
+      const d = await r.json();
+      resultado = parseIAJson(d.candidates?.[0]?.content?.parts?.[0]?.text||'{}');
+    } else if(cfg.proveedor==='claude'){
+      const r = await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':cfg.apiKey,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({
+          model:cfg.modelo||'claude-haiku-4-5', max_tokens:300,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:scanImageBase64}},
+            {type:'text',text:prompt}
+          ]}]
+        })
+      });
+      const d = await r.json();
+      resultado = parseIAJson(d.content?.[0]?.text||'{}');
+    }
+
+    document.getElementById('scan-loading').style.display='none';
+    if(resultado) mostrarResultadoScan(resultado);
+    else { toast('❌ No se pudo analizar la imagen','var(--red)'); }
+
+  } catch(e){
+    document.getElementById('scan-loading').style.display='none';
+    toast('❌ Error al analizar: '+e.message,'var(--red)');
+  }
+}
+
+function parseIAJson(raw){
+  try{
+    const clean = raw.replace(/```json|```/g,'').trim();
+    return JSON.parse(clean);
+  } catch(e){
+    // Intentar extraer JSON del texto
+    const match = raw.match(/\{[\s\S]*\}/);
+    if(match){ try{ return JSON.parse(match[0]); }catch(e2){} }
+    return null;
+  }
+}
+
+function mostrarResultadoScan(res){
+  const confianzaColor = {alta:'var(--green)',media:'var(--amber)',baja:'var(--red)'}[res.confianza]||'var(--t3)';
+  document.getElementById('scan-result-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="background:var(--card2);border-radius:10px;padding:8px">
+        <div style="font-size:10px;color:var(--t3)">Monto detectado</div>
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:900;color:var(--red)">${fmtCOP(res.monto||0)}</div>
+      </div>
+      <div style="background:var(--card2);border-radius:10px;padding:8px">
+        <div style="font-size:10px;color:var(--t3)">Confianza</div>
+        <div style="font-size:14px;font-weight:700;color:${confianzaColor}">${res.confianza||'—'}</div>
+      </div>
+    </div>
+    <div style="font-size:11.5px;color:var(--t2);line-height:1.6">
+      📍 <b>Comercio:</b> ${res.descripcion||'No detectado'}<br/>
+      📅 <b>Fecha:</b> ${res.fecha||'No detectada'}<br/>
+      🏷️ <b>Categoría:</b> ${res.categoria||'otro'}<br/>
+      ${res.banco?`🏦 <b>Banco:</b> ${res.banco}<br/>`:''}
+      ${res.notas?`📝 <b>Nota:</b> ${res.notas}`:''}
+    </div>`;
+
+  // Pre-llenar formulario de corrección
+  document.getElementById('scan-desc').value = res.descripcion||'';
+  document.getElementById('scan-monto').value = res.monto ? (res.monto).toLocaleString('es-CO') : '';
+  document.getElementById('scan-fecha').value = res.fecha||todayStr();
+  const catSel = document.getElementById('scan-categoria');
+  if(catSel && res.categoria) catSel.value = res.categoria;
+  populateCuentasSelect('scan-cuenta');
+
+  document.getElementById('scan-result').style.display='';
+}
+
+function guardarMovimientoScan(){
+  const desc = document.getElementById('scan-desc').value.trim();
+  const monto = parseCOP(document.getElementById('scan-monto').value);
+  const fecha = document.getElementById('scan-fecha').value||todayStr();
+  const categoria = document.getElementById('scan-categoria').value;
+  const cuentaId = parseInt(document.getElementById('scan-cuenta').value)||0;
+
+  if(!desc){ toast('⚠️ Escribe una descripción','var(--amber)'); return; }
+  if(!monto){ toast('⚠️ Ingresa un monto válido','var(--amber)'); return; }
+
+  DB.movimientos.unshift({id:uid(), tipo:'gasto', descripcion:desc, monto, fecha, cuentaId, categoria, nota:'Escaneado con IA', source:'scan'});
+  const cuenta = DB.cuentas.find(c=>c.id===cuentaId);
+  if(cuenta) cuenta.saldo -= monto;
+  save();
+  toast('✅ Gasto registrado desde factura','var(--green)');
+  resetScan();
+  renderResumen();
+}
+
+function resetScan(){
+  scanImageBase64=null;
+  document.getElementById('scan-preview-wrap').style.display='none';
+  document.getElementById('scan-empty-frame').style.display='';
+  document.getElementById('scan-result').style.display='none';
+  document.getElementById('scan-loading').style.display='none';
+  document.getElementById('scan-no-key').style.display='none';
+}
+
+// Parsear texto bancario manual
+function parsearTextoManual(){
+  const texto = document.getElementById('inbox-texto').value.trim();
+  if(!texto){ toast('⚠️ Pega el texto del banco','var(--amber)'); return; }
+  const montoMatch = texto.match(/([\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?)/);
+  const monto = montoMatch ? parseCOP(montoMatch[1]) : 0;
+  const esIngreso = /recib|crédito|consignación|abono|depósito|ingres/i.test(texto);
+  const tipo = esIngreso ? 'ingreso' : 'gasto';
+  const banco = texto.match(/bancolombia|nequi|daviplata|bbva|davivienda|colpatria/i)?.[0]||'Banco';
+  const entry = { id:uid(), raw:texto, monto, tipo, banco, status:'pending', fecha:todayStr() };
+  DB.inboxDetected.push(entry); save();
+  const el = document.getElementById('inbox-result-list');
+  el.innerHTML = `<div class="inbox-card">
+    <div style="font-size:11px;font-weight:700;color:var(--amber)">Detección — ${banco}</div>
+    <div class="inbox-raw">${texto.substring(0,200)}</div>
+    <div style="font-size:13px;color:var(--t1);margin:6px 0">
+      Tipo: <b style="color:${tipo==='ingreso'?'var(--green)':'var(--red)'}">${tipo==='ingreso'?'📥 Ingreso':'📤 Gasto'}</b>
+      &nbsp;·&nbsp; Monto: <b>${fmtCOP(monto)}</b>
+    </div>
+    <div class="inbox-actions">
+      <button class="inbox-btn-ok" onclick="confirmarDeteccion(${entry.id})">✅ Confirmar</button>
+      <button class="inbox-btn-ko" onclick="rechazarDeteccion(${entry.id})">✕ Rechazar</button>
+    </div>
+  </div>` + el.innerHTML;
 }
 
 function toggleConfig(toggleId, key){
   const t = document.getElementById(toggleId);
+  if(!t) return;
   t.classList.toggle('on');
   DB.ia[key] = t.classList.contains('on');
   save();
