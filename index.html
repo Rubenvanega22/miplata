@@ -150,12 +150,13 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:'DM Sans',sans
 .fab{position:absolute;bottom:70px;right:16px;width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#4a8fe8);border:none;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,0.4);z-index:20;}
 .bbar-wrap{flex-shrink:0;padding:6px 12px 26px;background:var(--bg);z-index:10;}
 .bbar{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--bd);border-radius:25px;padding:5px 6px;box-shadow:0 0 24px rgba(29,78,216,0.12);}
-.bb-cam{width:38px;height:38px;border-radius:50%;background:var(--card2);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;flex-shrink:0;transition:background 0.15s;}
+.bb-cam{position:relative;width:38px;height:38px;border-radius:50%;background:var(--card2);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;flex-shrink:0;transition:background 0.15s;overflow:hidden;}
 .bb-cam:active{background:rgba(59,130,246,0.2);}
 .bb-inp-wrap{flex:1;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.04);border:1px solid var(--bd2);border-radius:18px;padding:7px 12px;}
 .bb-inp{flex:1;background:transparent;border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--t1);}
 .bb-inp::placeholder{color:var(--t3);}
 .bb-send{font-size:13px;color:var(--blue);flex-shrink:0;cursor:pointer;}
+.bb-send-btn{background:none;border:none;font-size:16px;color:var(--blue);flex-shrink:0;cursor:pointer;padding:2px 4px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 .bb-mic{width:38px;height:38px;border-radius:50%;background:var(--card2);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;flex-shrink:0;transition:all 0.15s;}
 .bb-mic.active{background:rgba(248,113,113,0.2);border-color:var(--red);animation:pulse 1s infinite;}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4);}50%{box-shadow:0 0 0 8px rgba(248,113,113,0);}}
@@ -278,7 +279,7 @@ select.form-inp option{background:#0c1228;}
   <div class="hdr">
     <div class="logo">
       <div class="logo-x"></div>
-      <span class="logo-name">Kontrol</span>
+      <span class="logo-name">Kontrol</span><span style="font-size:9px;color:rgba(74,222,128,0.7);margin-left:4px;font-family:monospace">v5.2</span>
     </div>
     <div class="hdr-right">
       <div class="hbtn" onclick="goTab('inbox');setScanTab('bandeja')">🔔<div class="badge" id="notif-badge" style="display:none">0</div></div>
@@ -653,13 +654,15 @@ select.form-inp option{background:#0c1228;}
   <!-- BOTTOM BAR IA -->
   <div class="bbar-wrap">
     <div class="bbar">
-      <div class="bb-cam" onclick="goTab('inbox');setScanTab('camara')" title="Escanear factura">📷</div>
+      <div class="bb-cam" id="cam-btn" title="Escanear factura">📷
+        <input type="file" id="scan-file-bbar" accept="image/*" capture="environment" style="position:absolute;opacity:0;width:100%;height:100%;top:0;left:0;cursor:pointer" onchange="onImageSelected(event);goTab('inbox');setScanTab('camara')"/>
+      </div>
       <div class="bb-inp-wrap">
-        <input class="bb-inp" id="ia-input" placeholder="Escribe a la IA…" onkeydown="if(event.key==='Enter')sendIA()"/>
-        <span class="bb-send" onclick="sendIA()">➤</span>
+        <input class="bb-inp" id="ia-input" placeholder="Escribe a la IA…" onkeydown="if(event.key==='Enter'){this.blur();sendIA();}"/>
+        <button class="bb-send-btn" ontouchend="event.preventDefault();sendIA();" onclick="sendIA()">➤</button>
       </div>
       <div class="bb-mic" id="mic-btn" onclick="toggleMic()" title="Hablar">🎤</div>
-      <div class="bb-mic" id="tts-btn" onclick="toggleTTS()" title="Voz activa — toca para silenciar" style="font-size:15px">🔊</div>
+      <div class="bb-mic" id="tts-btn" onclick="toggleTTS()" title="Voz activa" style="font-size:15px">🔊</div>
     </div>
   </div>
 
@@ -1814,7 +1817,10 @@ async function sendIA(){
   const msg = inp.value.trim();
   if(!msg) return;
   inp.value='';
+  inp.blur();
   goTab('ia');
+  // Scroll IA al fondo
+  setTimeout(()=>{const el=document.getElementById('ia-msgs');if(el)el.scrollTop=el.scrollHeight;},100);
   addIAMsg(msg,'usr');
   iaHistory.push({role:'user',content:msg});
   showTyping();
