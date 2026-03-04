@@ -1896,50 +1896,18 @@ function buildIASystem(){
   const mes = hoy.getMonth(), anio = hoy.getFullYear();
   const movsDelMes = DB.movimientos.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getMonth()===mes&&d.getFullYear()===anio; });
   const ingresos = movsDelMes.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+m.monto,0);
-  const gastos = movsDelMes.filter(m=>m.tipo==='gasto').reduce((a,m)=>a+m.monto,0);
-  const movsRecientes = DB.movimientos.slice(0,8).map(m=>(m.tipo==='ingreso'?'+':'-')+fmtCOP(m.monto)+' '+m.descripcion+' ('+fmtDate(m.fecha)+')').join('
-');
-  const pagosPend = DB.pagos.filter(p=>p.status!=='pagado').map(p=>p.nombre+' '+fmtCOP(p.monto)+' vence '+fmtDate(p.fechaLimite)).join('
-');
-  const eventosProx = DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5).map(e=>e.titulo+' el '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join('
-');
-  const recordAbiertos = DB.recordatorios.filter(r=>r.status==='open').slice(0,5).map(r=>'['+r.tipo+'] '+r.titulo).join('
-');
-  const cajas = DB.cajas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', ');
+  const gastos2 = movsDelMes.filter(m=>m.tipo==='gasto').reduce((a,m)=>a+m.monto,0);
+  const movsTxt = DB.movimientos.slice(0,6).map(m=>(m.tipo==='ingreso'?'+':'-')+fmtCOP(m.monto)+' '+m.descripcion).join(' | ');
+  const pagosTxt = DB.pagos.filter(p=>p.status!=='pagado').map(p=>p.nombre+' '+fmtCOP(p.monto)+' vence '+fmtDate(p.fechaLimite)).join(' | ');
+  const eventosTxt = DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5).map(e=>e.titulo+' el '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join(' | ');
+  const recsTxt = DB.recordatorios.filter(r=>r.status==='open').slice(0,5).map(r=>'['+r.tipo+'] '+r.titulo).join(' | ');
+  const cajasTxt = DB.cajas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', ');
+  const cuentasTxt = DB.cuentas.map(c=>c.nombre+'('+fmtCOP(c.saldo)+')').join(', ')||'ninguna';
   const nombre = DB.ia.usuarioNombre||'usuario';
   const iaName = DB.ia.nombre||'Kontrol';
   const mesStr = String(mes+1).padStart(2,'0');
-  return 'Eres '+iaName+', asistente financiero personal de '+nombre+'. Tienes acceso COMPLETO a sus finanzas y puedes ejecutar ACCIONES REALES en la app.
-
-Saldo total: '+fmtCOP(total)+'
-Cuentas: '+(DB.cuentas.map(c=>c.nombre+'('+fmtCOP(c.saldo)+')').join(', ')||'ninguna')+'
-Cajas: '+(cajas||'ninguna')+'
-Ingresos del mes: '+fmtCOP(ingresos)+'
-Gastos del mes: '+fmtCOP(gastos)+'
-Balance: '+fmtCOP(ingresos-gastos)+'
-
-Movimientos recientes:
-'+(movsRecientes||'ninguno')+'
-
-Pagos pendientes:
-'+(pagosPend||'ninguno')+'
-
-Agenda proxima:
-'+(eventosProx||'ninguno')+'
-
-Recordatorios:
-'+(recordAbiertos||'ninguno')+'
-
-ACCIONES DISPONIBLES (incluye al final de respuesta):
-[ACCION:gasto|monto|descripcion|categoria]
-[ACCION:ingreso|monto|descripcion|categoria]
-[ACCION:pago|nombre|monto|'+anio+'-'+mesStr+'-DD]
-[ACCION:evento|titulo|'+anio+'-'+mesStr+'-DD|HH:MM]
-[ACCION:recordatorio|nota|titulo]
-[ACCION:lista|titulo|item1,item2]
-[ACCION:navegar|resumen|movimientos|cajas|pagos|agenda|recordar]
-
-Responde siempre en español, tono amigable. Cuando ejecutes una accion confirma que lo hiciste. Nunca digas que no tienes acceso.';
+  const acciones = '[ACCION:gasto|50000|descripcion|alimentacion] [ACCION:ingreso|1000000|Salario|salario] [ACCION:pago|Internet|89000|'+anio+'-'+mesStr+'-15] [ACCION:evento|Dentista|'+anio+'-'+mesStr+'-20|10:00] [ACCION:recordatorio|nota|Comprar aceite] [ACCION:lista|Mercado|leche,pan,huevos] [ACCION:navegar|pagos]';
+  return 'Eres '+iaName+', asistente financiero de '+nombre+'. ACCESO COMPLETO a sus finanzas. DATOS: Saldo='+fmtCOP(total)+' Cuentas='+cuentasTxt+' Cajas='+(cajasTxt||'ninguna')+' Ingresos mes='+fmtCOP(ingresos)+' Gastos mes='+fmtCOP(gastos2)+' | Movimientos: '+(movsTxt||'ninguno')+' | Pagos pendientes: '+(pagosTxt||'ninguno')+' | Agenda: '+(eventosTxt||'ninguno')+' | Recordatorios: '+(recsTxt||'ninguno')+' | ACCIONES (incluye al final): '+acciones+' | Responde en espanol, amigable y conciso. Confirma cuando ejecutes algo. Nunca digas que no tienes acceso.';
 }
 
 function intentLocal(msg){
@@ -1947,55 +1915,48 @@ function intentLocal(msg){
   const total = DB.cuentas.reduce((a,c)=>a+c.saldo,0);
   const nombre = DB.ia.usuarioNombre||'';
   const hoy = new Date();
-  if(/cu.nto tengo|saldo total|dinero tengo|mis cuentas/i.test(m)){
-    const txt = DB.cuentas.length?DB.cuentas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', '):'sin cuentas';
+
+  if(/cu.nto tengo|saldo|dinero tengo|mis cuentas/i.test(m)){
+    const txt = DB.cuentas.length ? DB.cuentas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', ') : 'sin cuentas';
     return (nombre?nombre+', t':'T')+'u saldo total es '+fmtCOP(total)+'. ('+txt+')';
   }
   if(/pagos pendientes|debo pagar|qu. debo|vencen/i.test(m)){
-    const pend=DB.pagos.filter(p=>p.status!=='pagado');
+    const pend = DB.pagos.filter(p=>p.status!=='pagado');
     if(!pend.length) return 'No tienes pagos pendientes! 🎉';
-    return 'Tienes '+pend.length+' pago(s) pendiente(s):
-'+pend.map(p=>'• '+p.nombre+': '+fmtCOP(p.monto)+' — vence '+fmtDate(p.fechaLimite)).join('
-');
+    return 'Tienes '+pend.length+' pago(s) pendiente(s): '+pend.map(p=>p.nombre+' '+fmtCOP(p.monto)+' vence '+fmtDate(p.fechaLimite)).join(', ');
   }
   if(/gastos del mes|gast. este mes|cu.nto gast./i.test(m)){
-    const g=DB.movimientos.filter(x=>x.tipo==='gasto'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
+    const g = DB.movimientos.filter(x=>x.tipo==='gasto'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
     return 'Has gastado '+fmtCOP(g)+' este mes.';
   }
   if(/ingresos del mes|cu.nto gan.|ingres. este mes/i.test(m)){
-    const g=DB.movimientos.filter(x=>x.tipo==='ingreso'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
+    const g = DB.movimientos.filter(x=>x.tipo==='ingreso'&&new Date(x.fecha+'T12:00:00').getMonth()===hoy.getMonth()).reduce((a,x)=>a+x.monto,0);
     return 'Tus ingresos este mes: '+fmtCOP(g)+'.';
   }
   if(/agenda|eventos|qu. tengo programado/i.test(m)){
-    const evs=DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5);
-    if(!evs.length) return 'No tienes eventos proximos agendados.';
-    return 'Tus proximos eventos:
-'+evs.map(e=>'• '+e.titulo+' — '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join('
-');
+    const evs = DB.eventos.filter(e=>new Date(e.fecha+'T12:00:00')>=new Date()).slice(0,5);
+    if(!evs.length) return 'No tienes eventos proximos.';
+    return 'Proximos eventos: '+evs.map(e=>e.titulo+' el '+fmtDate(e.fecha)+(e.hora?' a las '+e.hora:'')).join(', ');
   }
-  if(/recordatorios|qu. tengo pendiente|mis notas/i.test(m)){
-    const recs=DB.recordatorios.filter(r=>r.status==='open').slice(0,5);
+  if(/recordatorios|notas pendientes/i.test(m)){
+    const recs = DB.recordatorios.filter(r=>r.status==='open').slice(0,5);
     if(!recs.length) return 'No tienes recordatorios abiertos.';
-    return 'Tus recordatorios:
-'+recs.map(r=>'• ['+r.tipo+'] '+r.titulo).join('
-');
+    return 'Recordatorios: '+recs.map(r=>'['+r.tipo+'] '+r.titulo).join(', ');
   }
-  if(/cajas|mis cajas|dinero en cajas/i.test(m)){
+  if(/cajas|mis cajas/i.test(m)){
     if(!DB.cajas.length) return 'No tienes cajas creadas.';
-    return 'Tus cajas:
-'+DB.cajas.map(c=>'• '+c.nombre+': '+fmtCOP(c.saldo)).join('
-');
+    return 'Tus cajas: '+DB.cajas.map(c=>c.nombre+': '+fmtCOP(c.saldo)).join(', ');
   }
-  const gastoM=m.match(/(?:crear\s+)?(?:registra[r]?\s+)?gasto\s+([\d.,]+)\s+(.+)/);
+  const gastoM = m.match(/(?:registra?r?\s+)?gasto\s+([\d.,]+)\s+(.+)/);
   if(gastoM){ const mo=parseCOP(gastoM[1]),desc=gastoM[2].trim(); if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo-=mo; save();renderResumen(); return 'Gasto de '+fmtCOP(mo)+' por "'+desc+'" registrado.'; } }
-  const ingresoM=m.match(/(?:crear\s+)?(?:registra[r]?\s+)?ingreso\s+([\d.,]+)\s+(.+)/);
+  const ingresoM = m.match(/(?:registra?r?\s+)?ingreso\s+([\d.,]+)\s+(.+)/);
   if(ingresoM){ const mo=parseCOP(ingresoM[1]),desc=ingresoM[2].trim(); if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:'ingreso',descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:'otro',nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo+=mo; save();renderResumen(); return 'Ingreso de '+fmtCOP(mo)+' por "'+desc+'" registrado.'; } }
-  const agendaM=msg.match(/ag.nda(?:me)?\s+(.+?)\s+(?:el|para el|para)\s+(\d{1,2})/i);
+  const agendaM = msg.match(/ag[e\u00e9]nda(?:me)?\s+(.+?)\s+(?:el|para)\s+(\d{1,2})/i);
   if(agendaM){ const titulo=agendaM[1].trim(),dia=agendaM[2].padStart(2,'0'),mes2=String(hoy.getMonth()+1).padStart(2,'0'),fecha=hoy.getFullYear()+'-'+mes2+'-'+dia; DB.eventos.push({id:uid(),titulo,fecha,hora:'',nota:'IA'}); save();renderAgenda();goTab('agenda'); return 'Evento "'+titulo+'" agendado para el '+dia+'/'+mes2+'.'; }
-  if(/rec.érdame|recuerda que/i.test(m)){ const txt=msg.replace(/rec.érdame|recuerda que/gi,'').trim(); if(txt){ DB.recordatorios.push({id:uid(),tipo:'nota',titulo:txt,content:{texto:txt},fecha:todayStr(),status:'open'}); save(); return 'Anotado: "'+txt+'"'; } }
-  const comprarM=m.match(/(?:rec.érdame\s+)?comprar\s+(.+)/i);
-  if(comprarM){ const items=comprarM[1].split(/,|\sy\s/).map(s=>s.trim()).filter(Boolean); DB.recordatorios.push({id:uid(),tipo:'lista',titulo:'Lista de compras',content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar'); return 'Lista creada con: '+items.join(', '); }
-  if(/ir a|ll.vame a|abre|mu.strame/i.test(m)){
+  if(/rec[u\u00fa][e\u00e9]rdame|recuerda que/i.test(m)){ const txt=msg.replace(/rec[u\u00fa][e\u00e9]rdame|recuerda que/gi,'').trim(); if(txt){ DB.recordatorios.push({id:uid(),tipo:'nota',titulo:txt,content:{texto:txt},fecha:todayStr(),status:'open'}); save();renderRecordatorios(); return 'Anotado: "'+txt+'"'; } }
+  const comprarM = m.match(/comprar\s+(.+)/i);
+  if(comprarM){ const items=comprarM[1].split(/,|\sy\s/).map(s=>s.trim()).filter(Boolean); DB.recordatorios.push({id:uid(),tipo:'lista',titulo:'Lista de compras',content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar'); return 'Lista creada: '+items.join(', '); }
+  if(/ir a|ll[e\u00e9]vame a|abre|mu[e\u00e9]strame/i.test(m)){
     if(/resumen|inicio/i.test(m)){goTab('resumen');return 'Aqui esta tu resumen.';}
     if(/movimientos/i.test(m)){goTab('movimientos');return 'Aqui estan tus movimientos.';}
     if(/pagos/i.test(m)){goTab('pagos');return 'Aqui estan tus pagos.';}
@@ -2008,18 +1969,33 @@ function intentLocal(msg){
 }
 
 function ejecutarAccionesIA(resp, originalMsg){
-  const matches=[...resp.matchAll(/\[ACCION:([^\]]+)\]/g)];
+  const matches = [...resp.matchAll(/\[ACCION:([^\]]+)\]/g)];
   if(!matches.length) return;
   matches.forEach(match=>{
-    const parts=match[1].split('|'); const accion=parts[0];
+    const parts = match[1].split('|');
+    const accion = parts[0];
     try{
-      if(accion==='gasto'||accion==='ingreso'){ const mo=parseCOP(parts[1]),desc=parts[2]||'Sin descripcion',cat=parts[3]||'otro'; if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:accion,descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:cat,nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo+=(accion==='ingreso'?mo:-mo); save();renderResumen(); } }
-      else if(accion==='pago'){ const nombre=parts[1],mo=parseCOP(parts[2]),fecha=parts[3]||todayStr(); if(nombre&&mo>0){ DB.pagos.push({id:uid(),nombre,monto:mo,fechaLimite:fecha,categoria:'otro',cuentaId:DB.cuentas[0]?.id||0,fijo:false,status:'pendiente'}); save();renderPagos(); } }
-      else if(accion==='evento'){ const titulo=parts[1],fecha=parts[2]||todayStr(),hora=parts[3]||''; if(titulo){ DB.eventos.push({id:uid(),titulo,fecha,hora,nota:'IA'}); save();renderAgenda();goTab('agenda'); } }
-      else if(accion==='recordatorio'){ const tipo=parts[1]||'nota',titulo=parts[2]; if(titulo){ DB.recordatorios.push({id:uid(),tipo,titulo,content:{texto:titulo},fecha:todayStr(),status:'open'}); save();renderRecordatorios(); } }
-      else if(accion==='lista'){ const titulo=parts[1]||'Lista',items=(parts[2]||'').split(',').map(s=>s.trim()).filter(Boolean); DB.recordatorios.push({id:uid(),tipo:'lista',titulo,content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar'); }
-      else if(accion==='navegar'){ if(parts[1])goTab(parts[1]); }
-      else if(accion==='pagarpago'){ const p=DB.pagos.find(x=>x.id===parseInt(parts[1])); if(p&&p.status!=='pagado'){ p.status='pagado'; DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:'Pago: '+p.nombre,monto:p.monto,fecha:todayStr(),cuentaId:p.cuentaId,categoria:'servicios',nota:'IA',source:'pago'}); const ct=DB.cuentas.find(c=>c.id===p.cuentaId); if(ct)ct.saldo-=p.monto; save();renderPagos();renderResumen(); } }
+      if(accion==='gasto'||accion==='ingreso'){
+        const mo=parseCOP(parts[1]),desc=parts[2]||'Sin descripcion',cat=parts[3]||'otro';
+        if(mo>0){ DB.movimientos.unshift({id:uid(),tipo:accion,descripcion:desc,monto:mo,fecha:todayStr(),cuentaId:DB.cuentas[0]?.id||0,categoria:cat,nota:'IA',source:'ia'}); if(DB.cuentas[0])DB.cuentas[0].saldo+=(accion==='ingreso'?mo:-mo); save();renderResumen(); }
+      } else if(accion==='pago'){
+        const nombre2=parts[1],mo=parseCOP(parts[2]),fecha=parts[3]||todayStr();
+        if(nombre2&&mo>0){ DB.pagos.push({id:uid(),nombre:nombre2,monto:mo,fechaLimite:fecha,categoria:'otro',cuentaId:DB.cuentas[0]?.id||0,fijo:false,status:'pendiente'}); save();renderPagos(); }
+      } else if(accion==='evento'){
+        const titulo=parts[1],fecha=parts[2]||todayStr(),hora=parts[3]||'';
+        if(titulo){ DB.eventos.push({id:uid(),titulo,fecha,hora,nota:'IA'}); save();renderAgenda();goTab('agenda'); }
+      } else if(accion==='recordatorio'){
+        const tipo=parts[1]||'nota',titulo=parts[2];
+        if(titulo){ DB.recordatorios.push({id:uid(),tipo,titulo,content:{texto:titulo},fecha:todayStr(),status:'open'}); save();renderRecordatorios(); }
+      } else if(accion==='lista'){
+        const titulo=parts[1]||'Lista',items=(parts[2]||'').split(',').map(s=>s.trim()).filter(Boolean);
+        DB.recordatorios.push({id:uid(),tipo:'lista',titulo,content:{items:items.map(it=>({text:it,done:false}))},fecha:todayStr(),status:'open'}); save();renderRecordatorios();goTab('recordar');
+      } else if(accion==='navegar'){
+        if(parts[1]) goTab(parts[1]);
+      } else if(accion==='pagarpago'){
+        const p=DB.pagos.find(x=>x.id===parseInt(parts[1]));
+        if(p&&p.status!=='pagado'){ p.status='pagado'; DB.movimientos.unshift({id:uid(),tipo:'gasto',descripcion:'Pago: '+p.nombre,monto:p.monto,fecha:todayStr(),cuentaId:p.cuentaId,categoria:'servicios',nota:'IA',source:'pago'}); const ct=DB.cuentas.find(c=>c.id===p.cuentaId); if(ct)ct.saldo-=p.monto; save();renderPagos();renderResumen(); }
+      }
     } catch(e){ console.log('Error accion IA:',e); }
   });
 }
