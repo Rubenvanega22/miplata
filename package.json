@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Kontrol - App financiera personal con IA",
   "engines": { "node": "18.x" },
+  "scripts": {
+    "build": "echo 'static site'",
+    "start": "node api/sync-emails.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "googleapis": "^140.0.0",
