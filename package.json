@@ -2,7 +2,7 @@
   "name": "kontrol-pro",
   "version": "1.0.0",
   "description": "Kontrol - App financiera personal con IA",
-  "engines": { "node": "18.x" },
+  "engines": { "node": "20.x" },
   "scripts": {
     "build": "echo 'static site'",
     "start": "node api/sync-emails.js"
