@@ -1819,7 +1819,6 @@ async function sendIA(){
   inp.value='';
   inp.blur();
   goTab('ia');
-  // Scroll IA al fondo
   setTimeout(()=>{const el=document.getElementById('ia-msgs');if(el)el.scrollTop=el.scrollHeight;},100);
   addIAMsg(msg,'usr');
   iaHistory.push({role:'user',content:msg});
@@ -1835,75 +1834,29 @@ async function sendIA(){
     return;
   }
 
-  // API externa si configurada
-  const cfg = DB.ia;
-  if(cfg.proveedor==='local'){
-    hideTyping();
-    const nombre = cfg.usuarioNombre||'';
-    addIAMsg((nombre?nombre+', ':'')+'puedo ayudarte con tu finanzas. Prueba: "¿cuánto tengo?", "crear gasto 50000 mercado", "pagos pendientes"','bot');
-    return;
-  }
-
   try {
-    let respText = '';
-    if(cfg.proveedor==='claude'){
-      const res = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':cfg.apiKey,'anthropic-version':'2023-06-01'},
-        body:JSON.stringify({
-          model: cfg.modelo||'claude-haiku-4-5',
-          max_tokens:500,
-          system: buildIASystem(),
-          messages: iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))
-        })
-      });
-      const data = await res.json();
-      respText = data.content?.[0]?.text || 'Sin respuesta';
-    } else if(cfg.proveedor==='openai'){
-      const res = await fetch('https://api.openai.com/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
-        body:JSON.stringify({
-          model: cfg.modelo||'gpt-4o-mini',
-          max_tokens:500,
-          messages:[{role:'system',content:buildIASystem()},...iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))]
-        })
-      });
-      const data = await res.json();
-      respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
-    } else if(cfg.proveedor==='groq'){
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
-        body:JSON.stringify({
-          model: cfg.modelo||'llama-3.3-70b-versatile',
-          max_tokens:500,
-          messages:[{role:'system',content:buildIASystem()},...iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))]
-        })
-      });
-      const data = await res.json();
-      respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
-    } else if(cfg.proveedor==='gemini'){
-      const modelo = cfg.modelo||'gemini-2.0-flash';
-      const geminiMsgs = [{role:'user',parts:[{text:buildIASystem()}]},{role:'model',parts:[{text:'Entendido, soy tu asistente Kontrol.'}]}];
-      iaHistory.slice(-8).forEach(h=>geminiMsgs.push({role:h.role==='assistant'?'model':'user',parts:[{text:h.content}]}));
-      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+cfg.apiKey,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents:geminiMsgs,generationConfig:{maxOutputTokens:500}})
-      });
-      const data = await res.json();
-      if(data.error) throw new Error(data.error.message);
-      respText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sin respuesta';
-    }
+    // Llamar al backend /api/ai-chat — API key segura en el servidor
+    const res = await fetch('/api/ai-chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        message: msg,
+        history: iaHistory.slice(-10)
+      })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Error del servidor');
+    const respText = data.respuesta || 'Sin respuesta';
     hideTyping();
     addIAMsg(respText,'bot');
     iaHistory.push({role:'assistant',content:respText});
     hablar(respText);
-    ejecutarAccionesIA(respText, msg);
+    if(data.acciones && data.acciones.length > 0){
+      setTimeout(()=>{ if(typeof loadData==='function') loadData(); }, 1000);
+    }
   } catch(e){
     hideTyping();
-    addIAMsg('Error de conexión. Verifica tu API key en Configuración.','bot');
+    addIAMsg('⚠️ Error: '+e.message,'bot');
   }
 }
 
