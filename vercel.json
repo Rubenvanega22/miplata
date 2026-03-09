@@ -8,7 +8,7 @@
     { "src": "/(.*)", "dest": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/sync-emails", "schedule": "0 * * * *"  },
-    { "path": "/api/ai-analysis", "schedule": "0 8 * * *" }
+    { "path": "/api/sync-emails", "schedule": "0 8 * * *" },
+    { "path": "/api/ai-analysis", "schedule": "0 9 * * *" }
   ]
 }
