@@ -3,19 +3,12 @@
   "functions": {
     "api/*.js": { "maxDuration": 30 }
   },
-  "rewrites": [
-    { "source": "/", "destination": "/public/index.html" },
-    { "source": "/((?!api/).*)", "destination": "/public/index.html" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ],
   "crons": [
-    {
-      "path": "/api/sync-emails",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/ai-analysis",
-      "schedule": "0 8 * * *"
-    }
+    { "path": "/api/sync-emails", "schedule": "*/5 * * * *" },
+    { "path": "/api/ai-analysis", "schedule": "0 8 * * *" }
   ]
 }
-
