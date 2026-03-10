@@ -233,7 +233,7 @@ async function extraerYGuardarMemorias(mensaje, respuesta, userId) {
     if (match) {
       const contenido = p.fmt(match);
       if (!contenido || contenido.includes('undefined')) continue;
-      const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', p.tipo).ilike('contenido', `%${contenido.substring(0, 15)}%`).single().catch(() => ({ data: null }));
+      const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', p.tipo).ilike('contenido', `%${contenido.substring(0, 15)}%`).maybeSingle();
       if (!existente) {
         await supabase.from('ai_memory').insert({ user_id: userId, tipo: p.tipo, contenido, importancia: p.imp }).catch(() => {});
       }
@@ -247,7 +247,7 @@ async function extraerYGuardarMemorias(mensaje, respuesta, userId) {
     const contenido = m[2];
     const importancia = parseInt(m[3]) || 3;
     if (!contenido) continue;
-    const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', tipo).ilike('contenido', `%${contenido.substring(0, 20)}%`).single().catch(() => ({ data: null }));
+    const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', tipo).ilike('contenido', `%${contenido.substring(0, 20)}%`).maybeSingle();
     if (existente) {
       await supabase.from('ai_memory').update({ contenido, importancia }).eq('id', existente.id).catch(() => {});
     } else {
