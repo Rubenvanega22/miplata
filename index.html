@@ -2171,11 +2171,35 @@ function toggleMic(){
   };
   recognition.onerror = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
   recognition.onend = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
-  recognition.start();
-  micActive=true;
-  document.getElementById('mic-btn').classList.add('active');
-  // Solo decir "¿Qué necesitas?" sin el resumen
-  hablarCorto('¿Qué necesitas?');
+  // Esperar a que la IA termine de hablar antes de activar el micrófono
+  const iniciarMic = () => {
+    const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.lang='es-CO';
+    recognition.continuous=false;
+    recognition.interimResults=false;
+    recognition.onresult = e=>{
+      const txt = e.results[0][0].transcript;
+      document.getElementById('ia-input').value = txt;
+      micActive=false;
+      document.getElementById('mic-btn').classList.remove('active');
+      sendIA();
+    };
+    recognition.onerror = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
+    recognition.onend = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
+    recognition.start();
+    micActive=true;
+    document.getElementById('mic-btn').classList.add('active');
+  };
+
+  // Si la IA está hablando, esperar 800ms después de que termine
+  if(ttsSpeaking){
+    window.speechSynthesis.cancel();
+    ttsSpeaking = false;
+    setTimeout(iniciarMic, 800);
+  } else {
+    setTimeout(iniciarMic, 300);
+  }
 }
 
 // ════════════════════════════════════════
