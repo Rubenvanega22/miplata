@@ -2768,8 +2768,10 @@ async function doRegistro() {
   authMsg('Verificando código...', 'rgba(232,238,248,0.5)');
 
   // Validar código de invitación
-  const { data: inv } = await supa.from('invitaciones').select('*').eq('codigo', codigo).eq('activo', true).single();
-  if (!inv) return authMsg('Código de invitación inválido o ya usado');
+  const { data: inv, error: invErr } = await supa.from('invitaciones').select('*').eq('codigo', codigo).single();
+  console.log('Invitacion resultado:', inv, invErr);
+  if (invErr || !inv) return authMsg('Código inválido. Error: ' + (invErr?.message || 'no encontrado'));
+  if (!inv.activo) return authMsg('Este código está desactivado');
   if (inv.usos_actuales >= inv.usos_maximos) return authMsg('Este código ya alcanzó su límite de usos');
 
   authMsg('Creando cuenta...', 'rgba(232,238,248,0.5)');
