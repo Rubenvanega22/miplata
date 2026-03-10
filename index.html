@@ -12,6 +12,7 @@
 <meta name="theme-color" content="#070b18"/>
 <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;Kontrol&quot;,&quot;short_name&quot;:&quot;Kontrol&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23070b18&quot;,&quot;theme_color&quot;:&quot;%23070b18&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23070b18'/%3E%3Ctext x='96' y='130' font-size='110' text-anchor='middle' fill='%233b82f6'%3EK%3C/text%3E%3C/svg%3E&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/svg+xml&quot;}]}"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#070b18;--card:#0c1228;--card2:#0f1632;--card3:#121a38;
@@ -264,6 +265,67 @@ select.form-inp option{background:#0c1228;}
 </style>
 </head>
 <body>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- PANTALLA DE AUTH (login / registro)        -->
+<!-- ══════════════════════════════════════════ -->
+<div id="auth-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100vw;height:100vh;background:#070b18;padding:24px;position:fixed;inset:0;z-index:9999;">
+  <div style="width:100%;max-width:360px;">
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;background:rgba(59,130,246,0.15);border-radius:20px;margin-bottom:12px;border:1px solid rgba(59,130,246,0.3);">
+        <span style="font-family:'Syne',sans-serif;font-size:32px;font-weight:900;color:#3b82f6;">K</span>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-size:26px;font-weight:900;color:#e8eef8;">Kontrol</div>
+      <div style="font-size:12px;color:rgba(232,238,248,0.4);margin-top:4px;">Tu agente financiero personal</div>
+    </div>
+
+    <!-- Tabs login/registro -->
+    <div style="display:flex;background:rgba(255,255,255,0.05);border-radius:12px;padding:3px;margin-bottom:20px;">
+      <button id="auth-tab-login" onclick="setAuthTab('login')" style="flex:1;padding:8px;border:none;border-radius:9px;background:rgba(59,130,246,0.2);color:#e8eef8;font-weight:700;font-size:13px;cursor:pointer;transition:all 0.2s;">Entrar</button>
+      <button id="auth-tab-registro" onclick="setAuthTab('registro')" style="flex:1;padding:8px;border:none;border-radius:9px;background:transparent;color:rgba(232,238,248,0.5);font-weight:600;font-size:13px;cursor:pointer;transition:all 0.2s;">Registrarse</button>
+    </div>
+
+    <!-- Form LOGIN -->
+    <div id="auth-form-login">
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Correo</div>
+        <input id="login-email" type="email" placeholder="tu@correo.com" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;"/>
+      </div>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Contraseña</div>
+        <input id="login-pass" type="password" placeholder="••••••••" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;"/>
+      </div>
+      <button onclick="doLogin()" style="width:100%;padding:13px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:0.3px;">Entrar</button>
+    </div>
+
+    <!-- Form REGISTRO -->
+    <div id="auth-form-registro" style="display:none;">
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Tu nombre</div>
+        <input id="reg-nombre" type="text" placeholder="Rubén" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;"/>
+      </div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Correo</div>
+        <input id="reg-email" type="email" placeholder="tu@correo.com" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;"/>
+      </div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Contraseña</div>
+        <input id="reg-pass" type="password" placeholder="Mínimo 6 caracteres" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;"/>
+      </div>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Código de invitación</div>
+        <input id="reg-codigo" type="text" placeholder="Ej: RUBEN2026" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e8eef8;font-size:14px;outline:none;text-transform:uppercase;"/>
+        <div style="font-size:11px;color:rgba(232,238,248,0.3);margin-top:5px;">Solo usuarios con código pueden registrarse</div>
+      </div>
+      <button onclick="doRegistro()" style="width:100%;padding:13px;background:linear-gradient(135deg,#065f46,#10b981);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Crear cuenta</button>
+    </div>
+
+    <!-- Mensaje de error/info -->
+    <div id="auth-msg" style="margin-top:14px;text-align:center;font-size:13px;color:#f87171;display:none;"></div>
+  </div>
+</div>
+
 <div class="app">
   <div class="app-glow"></div>
 
@@ -296,6 +358,7 @@ select.form-inp option{background:#0c1228;}
     <button class="ntab" id="tab-agenda" onclick="goTab('agenda')">📅 Agenda</button>
     <button class="ntab" id="tab-recordar" onclick="goTab('recordar')">📌 Recordar</button>
     <button class="ntab" id="tab-ia" onclick="goTab('ia')">🧠 IA</button>
+    <button class="ntab" id="tab-metas" onclick="goTab('metas')">🎯 Metas</button>
     <button class="ntab" id="tab-inbox" onclick="goTab('inbox')" style="display:none">📥 Bandeja</button>
     <button class="ntab" id="tab-config" onclick="goTab('config')" style="display:none">⚙️ Config</button>
   </div>
@@ -565,6 +628,33 @@ select.form-inp option{background:#0c1228;}
       </div>
     </div>
 
+    <!-- ══ METAS ══ -->
+    <div class="scr" id="scr-metas">
+      <div class="scroll">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-size:16px;font-weight:800;color:#e8eef8;">🎯 Mis Metas</div>
+          <button class="fbtn on" onclick="showModal('modal-meta')" style="padding:6px 14px;font-size:12px;">+ Nueva</button>
+        </div>
+        <!-- Resumen anual -->
+        <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:14px;padding:14px;margin-bottom:16px;" id="metas-resumen-anual">
+          <div style="font-size:11px;font-weight:700;color:rgba(232,238,248,0.5);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Resumen 2026</div>
+          <div style="display:flex;gap:16px;">
+            <div><div style="font-size:20px;font-weight:800;color:#4ade80;" id="metas-completadas-count">0</div><div style="font-size:10px;color:rgba(232,238,248,0.4);">Completadas</div></div>
+            <div><div style="font-size:20px;font-weight:800;color:#3b82f6;" id="metas-activas-count">0</div><div style="font-size:10px;color:rgba(232,238,248,0.4);">Activas</div></div>
+            <div><div style="font-size:20px;font-weight:800;color:#f59e0b;" id="metas-progreso-avg">0%</div><div style="font-size:10px;color:rgba(232,238,248,0.4);">Progreso</div></div>
+          </div>
+        </div>
+        <!-- Lista de metas -->
+        <div id="metas-lista">
+          <div style="text-align:center;padding:40px 0;color:rgba(232,238,248,0.3);">
+            <div style="font-size:32px;margin-bottom:8px;">🎯</div>
+            <div style="font-size:13px;">Sin metas aún</div>
+            <div style="font-size:11px;margin-top:4px;">Toca "+ Nueva" para crear tu primera meta</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ CONFIG ══ -->
     <div class="scr" id="scr-config">
       <div class="scroll">
@@ -650,6 +740,29 @@ select.form-inp option{background:#0c1228;}
     </div>
 
   </div><!-- /screens -->
+
+  <!-- ══ MODAL METAS ══ -->
+  <div id="modal-meta" class="modal hidden" onclick="closeModalOutside(event,'modal-meta')">
+    <div class="modal-box">
+      <div class="modal-ttl">Nueva Meta</div>
+      <div class="field"><div class="flbl">Título</div><input class="finp" id="meta-titulo" placeholder="Ej: Ahorrar para viaje"/></div>
+      <div class="field"><div class="flbl">Tipo</div>
+        <select class="finp" id="meta-tipo">
+          <option value="financiera">💰 Financiera (ahorro)</option>
+          <option value="habito">✅ Hábito</option>
+          <option value="proyecto">🚀 Proyecto</option>
+          <option value="personal">🌱 Personal</option>
+        </select>
+      </div>
+      <div class="field"><div class="flbl">Monto objetivo (COP)</div><input class="finp" id="meta-monto" type="number" placeholder="0"/></div>
+      <div class="field"><div class="flbl">Fecha límite</div><input class="finp" id="meta-fecha" type="date"/></div>
+      <div class="field"><div class="flbl">Descripción</div><input class="finp" id="meta-desc" placeholder="Opcional"/></div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="fbtn" onclick="hideModal('modal-meta')" style="flex:1">Cancelar</button>
+        <button class="fbtn on" onclick="saveMeta()" style="flex:1">Guardar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- BOTTOM BAR IA -->
   <div class="bbar-wrap">
@@ -2607,17 +2720,239 @@ updateTime(); setInterval(updateTime, 30000);
 // ════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════
-(function init(){
+// ════════════════════════════════════════
+// SUPABASE AUTH
+// ════════════════════════════════════════
+const SUPA_URL = 'https://nroujbmlfqbwopchjmj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yb3VqYm1sZnFid29wY2hqbWoiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc0MTU2NDI3MCwiZXhwIjoyMDU3MTQwMjcwfQ.jGonzUMgYzCKGnJidJQMVoFmBXx_K2BIqy8kXVMlSXA';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+let currentUser = null;
+let currentProfile = null;
+
+function setAuthTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('auth-form-login').style.display = isLogin ? 'block' : 'none';
+  document.getElementById('auth-form-registro').style.display = isLogin ? 'none' : 'block';
+  document.getElementById('auth-tab-login').style.background = isLogin ? 'rgba(59,130,246,0.2)' : 'transparent';
+  document.getElementById('auth-tab-login').style.color = isLogin ? '#e8eef8' : 'rgba(232,238,248,0.5)';
+  document.getElementById('auth-tab-registro').style.background = !isLogin ? 'rgba(59,130,246,0.2)' : 'transparent';
+  document.getElementById('auth-tab-registro').style.color = !isLogin ? '#e8eef8' : 'rgba(232,238,248,0.5)';
+  authMsg('');
+}
+
+function authMsg(msg, color) {
+  const el = document.getElementById('auth-msg');
+  el.textContent = msg;
+  el.style.color = color || '#f87171';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!email || !pass) return authMsg('Completa todos los campos');
+  authMsg('Entrando...', 'rgba(232,238,248,0.5)');
+  const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
+  if (error) return authMsg(error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos' : error.message);
+  await onLogin(data.user);
+}
+
+async function doRegistro() {
+  const nombre = document.getElementById('reg-nombre').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  const codigo = document.getElementById('reg-codigo').value.trim().toUpperCase();
+  if (!nombre || !email || !pass || !codigo) return authMsg('Completa todos los campos');
+  if (pass.length < 6) return authMsg('La contraseña debe tener al menos 6 caracteres');
+  authMsg('Verificando código...', 'rgba(232,238,248,0.5)');
+
+  // Validar código de invitación
+  const { data: inv } = await supa.from('invitaciones').select('*').eq('codigo', codigo).eq('activo', true).single();
+  if (!inv) return authMsg('Código de invitación inválido o ya usado');
+  if (inv.usos_actuales >= inv.usos_maximos) return authMsg('Este código ya alcanzó su límite de usos');
+
+  authMsg('Creando cuenta...', 'rgba(232,238,248,0.5)');
+  const { data, error } = await supa.auth.signUp({ email, password: pass, options: { data: { nombre } } });
+  if (error) return authMsg(error.message);
+
+  // Marcar código como usado
+  await supa.from('invitaciones').update({ usos_actuales: (inv.usos_actuales || 0) + 1, usado_por: data.user.id, usado_en: new Date().toISOString() }).eq('id', inv.id);
+
+  authMsg('¡Cuenta creada! Revisa tu correo para confirmar.', '#4ade80');
+}
+
+async function onLogin(user) {
+  currentUser = user;
+  const { data: profile } = await supa.from('profiles').select('*').eq('id', user.id).single();
+  currentProfile = profile;
+  // Ocultar pantalla de auth
+  document.getElementById('auth-screen').style.display = 'none';
+  // Actualizar nombre en IA
+  if (profile?.nombre) DB.ia.usuarioNombre = profile.nombre;
+  init();
+}
+
+async function doLogout() {
+  await supa.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+// Agregar botón de logout al header
+function addLogoutBtn() {
+  const hdrRight = document.querySelector('.hdr-right');
+  if (hdrRight && !document.getElementById('logout-btn')) {
+    const btn = document.createElement('div');
+    btn.id = 'logout-btn';
+    btn.className = 'hbtn';
+    btn.textContent = '👤';
+    btn.title = 'Salir';
+    btn.onclick = () => {
+      if (confirm('¿Cerrar sesión?')) doLogout();
+    };
+    hdrRight.appendChild(btn);
+  }
+}
+
+// ════════════════════════════════════════
+// INIT — verificar sesión al cargar
+// ════════════════════════════════════════
+(async function checkSession() {
+  const { data: { session } } = await supa.auth.getSession();
+  if (session?.user) {
+    await onLogin(session.user);
+  } else {
+    document.getElementById('auth-screen').style.display = 'flex';
+  }
+})();
+
+function init(){
+  addLogoutBtn();
   // Si no hay cuentas, mostrar welcome
   if(!DB.cuentas.length && !DB.movimientos.length){
     setTimeout(()=>{
-      addIAMsg('¡Hola! Soy Kontrol, tu asistente financiero 🧠\nEmpieza agregando una cuenta en ⚙️ Config, o dime:\n• "¿cuánto tengo?"\n• "gasto 50000 mercado"\n• "pagos pendientes"','bot');
+      const nombre = currentProfile?.nombre || DB.ia.usuarioNombre || 'usuario';
+      addIAMsg(`¡Hola ${nombre}! Soy tu asistente financiero 🧠\nEmpieza agregando una cuenta en ⚙️ Config, o dime:\n• "¿cuánto tengo?"\n• "gasto 50000 mercado"\n• "pagos pendientes"`,'bot');
     }, 500);
   }
   renderResumen();
   renderCalendario();
   renderConfig();
-})();
+  renderMetas();
+}
+
+// ════════════════════════════════════════
+// METAS
+// ════════════════════════════════════════
+let metasData = [];
+
+async function renderMetas() {
+  if (!currentUser) return;
+  const { data: metas } = await supa.from('metas').select('*, micrometas(*)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+  metasData = metas || [];
+
+  const completadas = metasData.filter(m => m.estado === 'completada').length;
+  const activas = metasData.filter(m => m.estado === 'activa').length;
+  const progresoAvg = metasData.length ? Math.round(metasData.reduce((a, m) => a + (m.progreso || 0), 0) / metasData.length) : 0;
+
+  document.getElementById('metas-completadas-count').textContent = completadas;
+  document.getElementById('metas-activas-count').textContent = activas;
+  document.getElementById('metas-progreso-avg').textContent = progresoAvg + '%';
+
+  const lista = document.getElementById('metas-lista');
+  if (!metasData.length) {
+    lista.innerHTML = `<div style="text-align:center;padding:40px 0;color:rgba(232,238,248,0.3);"><div style="font-size:32px;margin-bottom:8px;">🎯</div><div style="font-size:13px;">Sin metas aún</div><div style="font-size:11px;margin-top:4px;">Toca "+ Nueva" para crear tu primera meta</div></div>`;
+    return;
+  }
+
+  lista.innerHTML = metasData.map(m => {
+    const prog = m.progreso || 0;
+    const progColor = prog >= 80 ? '#4ade80' : prog >= 40 ? '#f59e0b' : '#3b82f6';
+    const tipoIcon = { financiera: '💰', habito: '✅', proyecto: '🚀', personal: '🌱' }[m.tipo] || '🎯';
+    const micros = m.micrometas || [];
+    const microsCompletas = micros.filter(mm => mm.completada).length;
+
+    return `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#e8eef8;">${tipoIcon} ${m.titulo}</div>
+          ${m.descripcion ? `<div style="font-size:11px;color:rgba(232,238,248,0.4);margin-top:2px;">${m.descripcion}</div>` : ''}
+          ${m.fecha_limite ? `<div style="font-size:10px;color:rgba(232,238,248,0.3);margin-top:2px;">📅 ${m.fecha_limite}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="addMicrometa('${m.id}')" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:4px 8px;font-size:10px;color:#60a5fa;cursor:pointer;">+ Paso</button>
+          <button onclick="deleteMeta('${m.id}')" style="background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:4px 8px;font-size:10px;color:#f87171;cursor:pointer;">🗑</button>
+        </div>
+      </div>
+      ${m.monto_objetivo ? `<div style="font-size:11px;color:rgba(232,238,248,0.5);margin-bottom:6px;">${fmtCOP(m.monto_actual||0)} / ${fmtCOP(m.monto_objetivo)}</div>` : ''}
+      <!-- Barra de progreso -->
+      <div style="background:rgba(255,255,255,0.07);border-radius:6px;height:6px;margin-bottom:8px;">
+        <div style="background:${progColor};height:6px;border-radius:6px;width:${prog}%;transition:width 0.3s;"></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:10px;color:rgba(232,238,248,0.4);">${micros.length ? `${microsCompletas}/${micros.length} pasos` : 'Sin pasos'}</div>
+        <div style="font-size:11px;font-weight:700;color:${progColor};">${prog}%</div>
+      </div>
+      ${micros.length ? `<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.05);padding-top:8px;">
+        ${micros.map(mm => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;" onclick="toggleMicrometa('${mm.id}','${m.id}')">
+          <div style="width:16px;height:16px;border-radius:50%;border:2px solid ${mm.completada ? '#4ade80' : 'rgba(255,255,255,0.2)'};background:${mm.completada ? '#4ade80' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;">
+            ${mm.completada ? '<span style="font-size:9px;color:#000;">✓</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:${mm.completada ? 'rgba(232,238,248,0.4)' : '#e8eef8'};${mm.completada ? 'text-decoration:line-through;' : ''}">${mm.titulo}</div>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function saveMeta() {
+  if (!currentUser) return;
+  const titulo = document.getElementById('meta-titulo').value.trim();
+  const tipo = document.getElementById('meta-tipo').value;
+  const monto = parseFloat(document.getElementById('meta-monto').value) || 0;
+  const fecha = document.getElementById('meta-fecha').value;
+  const desc = document.getElementById('meta-desc').value.trim();
+  if (!titulo) return toast('Escribe un título', 'red');
+
+  await supa.from('metas').insert({ user_id: currentUser.id, titulo, tipo, monto_objetivo: monto || null, fecha_limite: fecha || null, descripcion: desc, año: new Date().getFullYear() });
+  hideModal('modal-meta');
+  document.getElementById('meta-titulo').value = '';
+  document.getElementById('meta-monto').value = '';
+  document.getElementById('meta-fecha').value = '';
+  document.getElementById('meta-desc').value = '';
+  toast('Meta creada ✅', 'green');
+  renderMetas();
+}
+
+async function deleteMeta(id) {
+  if (!confirm('¿Eliminar esta meta?')) return;
+  await supa.from('metas').delete().eq('id', id);
+  renderMetas();
+}
+
+async function toggleMicrometa(microId, metaId) {
+  const micro = metasData.flatMap(m => m.micrometas || []).find(mm => mm.id === microId);
+  if (!micro) return;
+  await supa.from('micrometas').update({ completada: !micro.completada }).eq('id', microId);
+  // Actualizar progreso de la meta
+  const meta = metasData.find(m => m.id === metaId);
+  if (meta) {
+    const micros = meta.micrometas || [];
+    const totalCompletas = micros.filter(mm => mm.id === microId ? !micro.completada : mm.completada).length;
+    const progreso = micros.length ? Math.round((totalCompletas / micros.length) * 100) : 0;
+    await supa.from('metas').update({ progreso }).eq('id', metaId);
+  }
+  renderMetas();
+}
+
+async function addMicrometa(metaId) {
+  const titulo = prompt('¿Cuál es el siguiente paso?');
+  if (!titulo) return;
+  await supa.from('micrometas').insert({ meta_id: metaId, user_id: currentUser.id, titulo });
+  renderMetas();
+}
 </script>
 </body>
 </html>
