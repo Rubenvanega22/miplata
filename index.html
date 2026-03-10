@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#070b18"/>
 <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;Kontrol&quot;,&quot;short_name&quot;:&quot;Kontrol&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23070b18&quot;,&quot;theme_color&quot;:&quot;%23070b18&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23070b18'/%3E%3Ctext x='96' y='130' font-size='110' text-anchor='middle' fill='%233b82f6'%3EK%3C/text%3E%3C/svg%3E&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/svg+xml&quot;}]}"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 <style>
 :root{
   --bg:#070b18;--card:#0c1228;--card2:#0f1632;--card3:#121a38;
@@ -2765,23 +2765,25 @@ async function doRegistro() {
   const codigo = document.getElementById('reg-codigo').value.trim().toUpperCase();
   if (!nombre || !email || !pass || !codigo) return authMsg('Completa todos los campos');
   if (pass.length < 6) return authMsg('La contraseña debe tener al menos 6 caracteres');
-  authMsg('Verificando código...', 'rgba(232,238,248,0.5)');
-
-  // Validar código de invitación
-  const { data: inv, error: invErr } = await supa.from('invitaciones').select('*').eq('codigo', codigo).single();
-  console.log('Invitacion resultado:', inv, invErr);
-  if (invErr || !inv) return authMsg('Código inválido. Error: ' + (invErr?.message || 'no encontrado'));
-  if (!inv.activo) return authMsg('Este código está desactivado');
-  if (inv.usos_actuales >= inv.usos_maximos) return authMsg('Este código ya alcanzó su límite de usos');
-
+  if (codigo !== 'RUBEN2026') return authMsg('Código de invitación inválido');
+  
   authMsg('Creando cuenta...', 'rgba(232,238,248,0.5)');
-  const { data, error } = await supa.auth.signUp({ email, password: pass, options: { data: { nombre } } });
-  if (error) return authMsg(error.message);
-
-  // Marcar código como usado
-  await supa.from('invitaciones').update({ usos_actuales: (inv.usos_actuales || 0) + 1, usado_por: data.user.id, usado_en: new Date().toISOString() }).eq('id', inv.id);
-
-  authMsg('¡Cuenta creada! Revisa tu correo para confirmar.', '#4ade80');
+  try {
+    const { data, error } = await supa.auth.signUp({ 
+      email, 
+      password: pass, 
+      options: { data: { nombre } } 
+    });
+    if (error) return authMsg(error.message);
+    if (data?.user) {
+      authMsg('¡Cuenta creada! Entrando...', '#4ade80');
+      setTimeout(() => onLogin(data.user), 1000);
+    } else {
+      authMsg('¡Cuenta creada! Ya puedes entrar.', '#4ade80');
+    }
+  } catch(e) {
+    authMsg('Error: ' + e.message);
+  }
 }
 
 async function onLogin(user) {
