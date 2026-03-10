@@ -1997,7 +1997,8 @@ async function sendIA(){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         message: msg,
-        history: iaHistory.slice(-10)
+        history: iaHistory.slice(-10),
+        user_id: currentUser?.id || null
       })
     });
     const data = await res.json();
@@ -2143,6 +2144,13 @@ function toggleMic(){
     toast('⚠️ Tu navegador no soporta voz. Usa Chrome.','var(--amber)');
     return;
   }
+  // Si está hablando, callarla
+  if(ttsSpeaking){
+    window.speechSynthesis.cancel();
+    ttsSpeaking = false;
+    document.getElementById('mic-btn').style.background='';
+    return;
+  }
   if(micActive){
     micActive=false;
     document.getElementById('mic-btn').classList.remove('active');
@@ -2166,7 +2174,8 @@ function toggleMic(){
   recognition.start();
   micActive=true;
   document.getElementById('mic-btn').classList.add('active');
-  toast('🎤 Habla ahora…','var(--blue)');
+  // Solo decir "¿Qué necesitas?" sin el resumen
+  hablarCorto('¿Qué necesitas?');
 }
 
 // ════════════════════════════════════════
@@ -2175,40 +2184,65 @@ function toggleMic(){
 let ttsActivo = true;
 let ttsSpeaking = false;
 
+function hablarCorto(texto){
+  // Para el micrófono — solo frases cortas
+  if(!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(texto);
+  utt.lang = 'es-CO';
+  utt.rate = 1.1;
+  utt.volume = 1.0;
+  const voces = window.speechSynthesis.getVoices();
+  const vozEs = voces.find(v=>v.lang.startsWith('es')) || null;
+  if(vozEs) utt.voice = vozEs;
+  window.speechSynthesis.speak(utt);
+}
+
 function hablar(texto){
   if(!ttsActivo) return;
-  if(!('speechSynthesis' in window)){
-    toast('⚠️ Tu navegador no soporta voz de salida','var(--amber)');
-    return;
-  }
-  // Cancelar si ya está hablando
+  if(!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
 
-  // Limpiar texto — quitar emojis y markdown
+  // Limpiar texto
   const limpio = texto
     .replace(/[\u{1F300}-\u{1FAFF}]/gu,'')
     .replace(/[*_#`]/g,'')
     .replace(/\[.*?\]/g,'')
-    .substring(0,300); // máx 300 chars para no hablar demasiado
+    .trim();
 
-  const utt = new SpeechSynthesisUtterance(limpio);
-  utt.lang = 'es-CO';
-  utt.rate = 1.05;
-  utt.pitch = 1.0;
-  utt.volume = 1.0;
+  // Dividir en frases para evitar que se corte en Android
+  const frases = limpio.match(/[^.!?]+[.!?]*/g) || [limpio];
+  let indice = 0;
 
-  // Buscar voz en español
-  const voces = window.speechSynthesis.getVoices();
-  const vozEs = voces.find(v=>v.lang.startsWith('es')&&v.name.toLowerCase().includes('female'))
-    || voces.find(v=>v.lang.startsWith('es'))
-    || null;
-  if(vozEs) utt.voice = vozEs;
+  const hablarFrase = () => {
+    if(indice >= frases.length || !ttsActivo) {
+      ttsSpeaking = false;
+      document.getElementById('mic-btn').style.background='';
+      return;
+    }
+    const frase = frases[indice].trim();
+    if(!frase) { indice++; hablarFrase(); return; }
+    
+    const utt = new SpeechSynthesisUtterance(frase);
+    utt.lang = 'es-CO';
+    utt.rate = 1.05;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
 
-  utt.onstart = ()=>{ ttsSpeaking=true; document.getElementById('mic-btn').style.background='rgba(167,139,250,0.2)'; };
-  utt.onend = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
-  utt.onerror = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
+    const voces = window.speechSynthesis.getVoices();
+    const vozEs = voces.find(v=>v.lang.startsWith('es')&&v.name.toLowerCase().includes('female'))
+      || voces.find(v=>v.lang.startsWith('es'))
+      || null;
+    if(vozEs) utt.voice = vozEs;
 
-  window.speechSynthesis.speak(utt);
+    utt.onstart = ()=>{ ttsSpeaking=true; document.getElementById('mic-btn').style.background='rgba(167,139,250,0.2)'; };
+    utt.onend = ()=>{ indice++; hablarFrase(); };
+    utt.onerror = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
+
+    window.speechSynthesis.speak(utt);
+  };
+
+  hablarFrase();
 }
 
 function toggleTTS(){
@@ -2216,10 +2250,23 @@ function toggleTTS(){
   const btn = document.getElementById('tts-btn');
   if(btn){
     btn.textContent = ttsActivo ? '🔊' : '🔇';
-    btn.title = ttsActivo ? 'Voz activa — toca para silenciar' : 'Voz silenciada — toca para activar';
+    btn.title = ttsActivo ? 'Voz activa — toca para silenciar' : 'Voz silenciada';
   }
   toast(ttsActivo ? '🔊 Voz activada' : '🔇 Voz silenciada', 'var(--blue)');
   if(!ttsActivo) window.speechSynthesis.cancel();
+}
+
+// Cargar voces
+if('speechSynthesis' in window){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = ()=>{ window.speechSynthesis.getVoices(); };
+}
+
+function toggleTTSConfig(){
+  const t = document.getElementById('toggle-tts');
+  t.classList.toggle('on');
+  ttsActivo = t.classList.contains('on');
+  DB.ia.ttsActivo = ttsActivo;
 }
 
 // Cargar voces (algunas necesitan trigger)
