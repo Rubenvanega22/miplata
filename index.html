@@ -785,10 +785,10 @@ select.form-inp option{background:#0c1228;}
   </div><!-- /screens -->
 
   <!-- ══ MODAL METAS ══ -->
-  <div id="modal-meta" class="modal hidden" onclick="closeModalOutside(event,'modal-meta')">
-    <div class="modal-box">
+  <div id="modal-meta" class="modal-overlay hidden" onclick="closeModalOutside(event,'modal-meta')">
+    <div class="modal">
       <div class="modal-ttl">Nueva Meta</div>
-      <div class="field"><div class="flbl">Título</div><input class="finp" id="meta-titulo" placeholder="Ej: Ahorrar para viaje"/></div>
+      <div class="field"><div class="flbl">Título</div><input class="finp" id="meta-titulo" placeholder="Ej: Comprar casa en diciembre"/></div>
       <div class="field"><div class="flbl">Tipo</div>
         <select class="finp" id="meta-tipo">
           <option value="financiera">💰 Financiera (ahorro)</option>
