@@ -1,5 +1,69 @@
-// /api/ai-chat.js — Claude con memoria profunda y registros visibles
+// /api/ai-chat.js — Claude + Mem0 memoria profesional
 const supabase = require('../lib/supabase');
+
+const MEM0_API_KEY = process.env.MEM0_API_KEY;
+const MEM0_BASE = 'https://api.mem0.ai/v1';
+
+// ═══ MEM0 — guardar memoria ═══
+async function mem0Guardar(userId, mensajes) {
+  try {
+    const res = await fetch(`${MEM0_BASE}/memories/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${MEM0_API_KEY}`
+      },
+      body: JSON.stringify({
+        messages: mensajes,
+        user_id: userId,
+        output_format: 'v1.1'
+      })
+    });
+    const data = await res.json();
+    return data;
+  } catch(e) {
+    console.error('Mem0 guardar error:', e.message);
+    return null;
+  }
+}
+
+// ═══ MEM0 — buscar memorias relevantes ═══
+async function mem0Buscar(userId, query) {
+  try {
+    const res = await fetch(`${MEM0_BASE}/memories/search/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${MEM0_API_KEY}`
+      },
+      body: JSON.stringify({
+        query,
+        user_id: userId,
+        limit: 20,
+        output_format: 'v1.1'
+      })
+    });
+    const data = await res.json();
+    return (data.results || []).map(m => m.memory).join('\n');
+  } catch(e) {
+    console.error('Mem0 buscar error:', e.message);
+    return '';
+  }
+}
+
+// ═══ MEM0 — traer todas las memorias del usuario ═══
+async function mem0TraerTodo(userId) {
+  try {
+    const res = await fetch(`${MEM0_BASE}/memories/?user_id=${userId}&output_format=v1.1`, {
+      headers: { 'Authorization': `Token ${MEM0_API_KEY}` }
+    });
+    const data = await res.json();
+    return (data.results || []).map(m => m.memory).join('\n');
+  } catch(e) {
+    console.error('Mem0 traer error:', e.message);
+    return '';
+  }
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,27 +77,19 @@ module.exports = async function handler(req, res) {
   if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
 
   try {
-    // 1. Cargar contexto financiero completo
+    // 1. Contexto financiero en tiempo real
     const contexto = await buildContexto(user_id);
 
-    // 2. Cargar memoria del usuario
-    const { data: memorias } = await supabase
-      .from('ai_memory')
-      .select('contenido, tipo, importancia')
-      .eq('user_id', user_id)
-      .order('importancia', { ascending: false })
-      .limit(50);
+    // 2. Buscar memorias relevantes en Mem0
+    const [memoriaRelevante, todasMemoria] = await Promise.all([
+      mem0Buscar(user_id, message),
+      mem0TraerTodo(user_id)
+    ]);
 
-    // 3. Cargar resúmenes de sesiones anteriores
-    const { data: sesiones } = await supabase
-      .from('ia_sesiones')
-      .select('resumen, created_at')
-      .eq('user_id', user_id)
-      .order('created_at', { ascending: false })
-      .limit(5);
+    const memoria = todasMemoria || memoriaRelevante || 'Primera conversación con este usuario.';
 
-    const memoriaTxt = formatearMemoria(memorias || [], sesiones || []);
-    const systemPrompt = buildSystemPrompt(contexto, memoriaTxt);
+    // 3. Construir system prompt con contexto + memoria
+    const systemPrompt = buildSystemPrompt(contexto, memoria);
 
     // 4. Llamar a Claude
     const respuesta = await llamarClaude(systemPrompt, history, message, imagen_base64);
@@ -42,16 +98,14 @@ module.exports = async function handler(req, res) {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    // 5. Ejecutar acciones — registros visibles en la app
+    // 5. Ejecutar acciones (registrar gastos, eventos, etc.)
     const acciones = await ejecutarAcciones(respuesta, contexto, user_id);
 
-    // 6. Guardar memoria de esta conversación
-    await guardarMemoria(message, respuesta, user_id);
-
-    // 7. Guardar resumen de sesión SIEMPRE (no solo cada 6 mensajes)
-    if (history.length >= 2) {
-      await guardarResumenSesion(history, message, respuesta, user_id);
-    }
+    // 6. Guardar conversación en Mem0 — aprende automáticamente
+    await mem0Guardar(user_id, [
+      { role: 'user', content: message },
+      { role: 'assistant', content: respuestaLimpia }
+    ]);
 
     return res.json({ ok: true, respuesta: respuestaLimpia, acciones });
   } catch (error) {
@@ -69,8 +123,7 @@ async function buildContexto(userId) {
     { data: pagos },
     { data: eventos },
     { data: cajas },
-    { data: metas },
-    { data: recordatorios }
+    { data: metas }
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('movements').select('*').eq('user_id', userId)
@@ -82,8 +135,7 @@ async function buildContexto(userId) {
     supabase.from('events').select('*').eq('user_id', userId)
       .gte('fecha', new Date().toISOString().split('T')[0]).order('fecha').limit(10),
     supabase.from('cajas').select('*').eq('user_id', userId),
-    supabase.from('metas').select('*, micrometas(*)').eq('user_id', userId).eq('estado', 'activa'),
-    supabase.from('reminders').select('*').eq('user_id', userId).limit(5)
+    supabase.from('metas').select('*, micrometas(*)').eq('user_id', userId).eq('estado', 'activa')
   ]);
 
   const totalSaldo = (cuentas || []).reduce((a, c) => a + parseFloat(c.saldo || 0), 0);
@@ -95,38 +147,8 @@ async function buildContexto(userId) {
     totalSaldo, totalCajas, ingresosMes, gastosMes,
     cuentas: cuentas || [], movimientos: movsMes || [],
     movsRecientes: movsRecientes || [], pagos: pagos || [],
-    eventos: eventos || [], cajas: cajas || [],
-    metas: metas || [], recordatorios: recordatorios || []
+    eventos: eventos || [], cajas: cajas || [], metas: metas || []
   };
-}
-
-// ═══ FORMATEAR MEMORIA ═══
-function formatearMemoria(memorias, sesiones) {
-  const porTipo = {};
-  for (const m of memorias) {
-    if (!porTipo[m.tipo]) porTipo[m.tipo] = [];
-    porTipo[m.tipo].push(m.contenido);
-  }
-
-  let txt = '';
-  if (porTipo.perfil?.length)      txt += `PERFIL: ${porTipo.perfil.join(' | ')}\n`;
-  if (porTipo.negocio?.length)     txt += `NEGOCIOS: ${porTipo.negocio.join(' | ')}\n`;
-  if (porTipo.objetivo?.length)    txt += `OBJETIVOS: ${porTipo.objetivo.join(' | ')}\n`;
-  if (porTipo.habito?.length)      txt += `HÁBITOS: ${porTipo.habito.join(' | ')}\n`;
-  if (porTipo.preferencia?.length) txt += `PREFERENCIAS: ${porTipo.preferencia.join(' | ')}\n`;
-  if (porTipo.patron?.length)      txt += `PATRONES: ${porTipo.patron.join(' | ')}\n`;
-  if (porTipo.dato?.length)        txt += `DATOS: ${porTipo.dato.join(' | ')}\n`;
-  if (porTipo.general?.length)     txt += `OTROS: ${porTipo.general.join(' | ')}\n`;
-
-  if (sesiones.length > 0) {
-    txt += `\nCONVERSACIONES ANTERIORES:\n`;
-    for (const s of sesiones) {
-      const fecha = new Date(s.created_at).toLocaleDateString('es-CO');
-      txt += `• [${fecha}] ${s.resumen}\n`;
-    }
-  }
-
-  return txt || 'Primera conversación con este usuario — aprender todo lo posible.';
 }
 
 // ═══ SYSTEM PROMPT ═══
@@ -134,72 +156,57 @@ function buildSystemPrompt(ctx, memoria) {
   const fmt = n => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n);
   const hoy = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  return `Eres Ana, agente financiero personal. Tienes MEMORIA COMPLETA y acceso TOTAL a las finanzas del usuario en tiempo real.
+  return `Eres Ana, agente financiero personal. Tienes MEMORIA COMPLETA del usuario y acceso TOTAL a sus finanzas.
 
 HOY: ${hoy}
 
-═══ LO QUE SABES DE ESTE USUARIO ═══
-${memoria}
+═══ LO QUE SABES DEL USUARIO (memoria persistente) ═══
+${memoria || 'Primera vez que hablas con este usuario — aprende todo lo posible.'}
 
-═══ ESTADO FINANCIERO ACTUAL ═══
+═══ ESTADO FINANCIERO EN TIEMPO REAL ═══
 Total bancos: ${fmt(ctx.totalSaldo)}
 Total efectivo: ${fmt(ctx.totalCajas)}
-TOTAL: ${fmt(ctx.totalSaldo + ctx.totalCajas)}
+TOTAL DISPONIBLE: ${fmt(ctx.totalSaldo + ctx.totalCajas)}
 
 Cuentas: ${ctx.cuentas.map(c => `${c.nombre}(${fmt(c.saldo)})[ID:${c.id}]`).join(' | ') || 'ninguna'}
 Cajas: ${ctx.cajas.map(c => `${c.nombre}(${fmt(c.saldo)})[ID:${c.id}]`).join(' | ') || 'ninguna'}
-
-Mes actual — Ingresos: ${fmt(ctx.ingresosMes)} | Gastos: ${fmt(ctx.gastosMes)} | Balance: ${fmt(ctx.ingresosMes - ctx.gastosMes)}
+Mes: Ingresos ${fmt(ctx.ingresosMes)} | Gastos ${fmt(ctx.gastosMes)} | Balance ${fmt(ctx.ingresosMes - ctx.gastosMes)}
 
 Últimos movimientos:
 ${ctx.movsRecientes.map(m => `• ${m.tipo==='ingreso'?'↑':'↓'} ${fmt(m.monto)} — ${m.descripcion} (${m.fecha}) [ID:${m.id}]`).join('\n') || 'ninguno'}
 
-Todos los movimientos del mes:
+Todos del mes:
 ${ctx.movimientos.map(m => `• ${m.tipo==='ingreso'?'+':'-'}${fmt(m.monto)} ${m.descripcion} ${m.fecha} [ID:${m.id}]`).join('\n') || 'ninguno'}
 
 Pagos pendientes:
 ${ctx.pagos.map(p => `• ${p.nombre}: ${fmt(p.monto)} vence ${p.fecha_limite} [ID:${p.id}]`).join('\n') || 'ninguno'}
 
-Próximos eventos:
+Eventos próximos:
 ${ctx.eventos.map(e => `• ${e.titulo} — ${e.fecha} ${e.hora||''} [ID:${e.id}]`).join('\n') || 'ninguno'}
 
 Metas activas:
-${ctx.metas.map(m => `• ${m.titulo} — ${m.progreso||0}% — ${(m.micrometas||[]).filter(mm=>mm.completada).length}/${(m.micrometas||[]).length} pasos [ID:${m.id}]`).join('\n') || 'ninguna'}
+${ctx.metas.map(m => `• ${m.titulo} — ${m.progreso||0}% [ID:${m.id}]`).join('\n') || 'ninguna'}
 
-═══ ACCIONES — INVISIBLES AL USUARIO ═══
-Ponlas AL FINAL de tu respuesta. El usuario NUNCA las ve.
-Cada vez que el usuario mencione algo importante DEBES guardarlo en memoria.
-
-REGISTRAR (aparece visible en la app):
+═══ ACCIONES INVISIBLES — úsalas al final de tu respuesta ═══
 [ACCION:gasto|monto|descripcion|categoria]
 [ACCION:ingreso|monto|descripcion|categoria]
 [ACCION:pago|nombre|monto|YYYY-MM-DD]
 [ACCION:evento|titulo|YYYY-MM-DD|HH:MM]
 [ACCION:recordatorio|texto]
 [ACCION:meta|titulo|tipo|monto_objetivo|YYYY-MM-DD]
-
-BORRAR:
 [ACCION:borrar_movimiento|ID]
 [ACCION:borrar_pago|ID]
 [ACCION:borrar_evento|ID]
 
-MEMORIA (persiste entre sesiones):
-[ACCION:memoria|tipo|contenido|importancia]
-  tipos: perfil, negocio, objetivo, habito, preferencia, patron, dato
-
-═══ REGLAS CRÍTICAS ═══
-1. NUNCA muestres [ACCION:...] en tu respuesta — son invisibles
-2. Cuando alguien diga "gasté X en Y" → usa [ACCION:gasto|X|Y|categoria]
-3. Cuando alguien diga "me llegaron X" → usa [ACCION:ingreso|X|descripcion|ingreso]
-4. TODO lo que registres aparece visible en la app — confirma: "✅ Registré $X en Y"
-5. Si el insert falla lo sabrás porque no habrá confirmación del servidor
-6. GUARDA EN MEMORIA todo dato personal: nombre, negocios, metas, hábitos, ciudad
-7. Si el usuario menciona su nombre → [ACCION:memoria|perfil|Se llama X|5]
-8. Si menciona negocios → [ACCION:memoria|negocio|descripcion|4]
-9. Si menciona objetivos → [ACCION:memoria|objetivo|descripcion|4]
-10. Respuestas CORTAS y directas — máximo 3 líneas salvo análisis
-11. Español colombiano, tono cálido
-12. Si te preguntan qué recuerdas → cuéntale TODO lo que tienes guardado`;
+═══ REGLAS ═══
+1. NUNCA muestres [ACCION:...] — son invisibles
+2. Registra gastos/ingresos INMEDIATAMENTE cuando los mencionen
+3. Confirma: "✅ Registré $X en Y"
+4. TODO lo que registres aparece visible en la app
+5. Respuestas CORTAS — máx 3 líneas salvo análisis
+6. Español colombiano, tono cálido y cercano
+7. RECUERDAS TODO — úsalo naturalmente
+8. Si te preguntan qué recuerdas → cuéntale todo`;
 }
 
 // ═══ LLAMAR A CLAUDE ═══
@@ -227,7 +234,7 @@ async function llamarClaude(system, history, message, imagen) {
   return data.content[0].text;
 }
 
-// ═══ EJECUTAR ACCIONES — TODO QUEDA VISIBLE EN LA APP ═══
+// ═══ EJECUTAR ACCIONES — todo queda visible en la app ═══
 async function ejecutarAcciones(respuesta, contexto, userId) {
   const matches = [...respuesta.matchAll(/\[ACCION:([^\]]+)\]/g)];
   const ejecutadas = [];
@@ -241,40 +248,25 @@ async function ejecutarAcciones(respuesta, contexto, userId) {
         const monto = parseFloat(parts[1]);
         const desc = (parts[2] || 'Sin descripción').trim();
         const cat = (parts[3] || 'otro').trim();
-
         if (!monto || monto <= 0) continue;
 
-        // Usar primera cuenta si existe, sino null
         const cuentaId = contexto.cuentas[0]?.id || null;
-
-        // Insertar movimiento — verificar resultado
-        const { data: mov, error: movError } = await supabase
+        const { data: mov, error } = await supabase
           .from('movements')
           .insert({
-            user_id: userId,
-            tipo: accion,
-            descripcion: desc,
-            monto,
-            fecha: new Date().toISOString().split('T')[0],
-            account_id: cuentaId,
-            categoria: cat,
-            source: 'ia'
+            user_id: userId, tipo: accion, descripcion: desc,
+            monto, fecha: new Date().toISOString().split('T')[0],
+            account_id: cuentaId, categoria: cat, source: 'ia'
           })
-          .select()
-          .single();
+          .select().single();
 
-        if (movError) {
-          console.error('Error insertando movimiento:', movError);
-          continue;
-        }
+        if (error) { console.error('Error movimiento:', error.message); continue; }
 
-        // Actualizar saldo de la cuenta
         if (cuentaId && contexto.cuentas[0]) {
-          const saldoActual = parseFloat(contexto.cuentas[0].saldo || 0);
-          const nuevoSaldo = accion === 'ingreso' ? saldoActual + monto : saldoActual - monto;
-          await supabase.from('accounts').update({ saldo: nuevoSaldo }).eq('id', cuentaId).eq('user_id', userId);
+          const saldo = parseFloat(contexto.cuentas[0].saldo || 0);
+          const nuevo = accion === 'ingreso' ? saldo + monto : saldo - monto;
+          await supabase.from('accounts').update({ saldo: nuevo }).eq('id', cuentaId).eq('user_id', userId);
         }
-
         ejecutadas.push({ accion, monto, desc, id: mov.id });
 
       } else if (accion === 'borrar_movimiento') {
@@ -291,130 +283,37 @@ async function ejecutarAcciones(respuesta, contexto, userId) {
 
       } else if (accion === 'pago') {
         const { error } = await supabase.from('payments').insert({
-          user_id: userId,
-          nombre: parts[1],
-          monto: parseFloat(parts[2]),
-          fecha_limite: parts[3],
-          status: 'pendiente'
+          user_id: userId, nombre: parts[1],
+          monto: parseFloat(parts[2]), fecha_limite: parts[3], status: 'pendiente'
         });
         if (!error) ejecutadas.push({ accion, detalle: parts[1] });
 
       } else if (accion === 'evento') {
         const { error } = await supabase.from('events').insert({
-          user_id: userId,
-          titulo: parts[1],
-          fecha: parts[2],
-          hora: parts[3] || null,
-          nota: 'Creado por IA'
+          user_id: userId, titulo: parts[1],
+          fecha: parts[2], hora: parts[3] || null, nota: 'Creado por IA'
         });
         if (!error) ejecutadas.push({ accion, detalle: parts[1] });
 
       } else if (accion === 'recordatorio') {
         const { error } = await supabase.from('reminders').insert({
-          user_id: userId,
-          tipo: 'nota',
-          titulo: parts[1],
-          content: { texto: parts[1] },
-          fecha: new Date().toISOString().split('T')[0]
+          user_id: userId, tipo: 'nota', titulo: parts[1],
+          content: { texto: parts[1] }, fecha: new Date().toISOString().split('T')[0]
         });
         if (!error) ejecutadas.push({ accion, detalle: parts[1] });
 
       } else if (accion === 'meta') {
         const { error } = await supabase.from('metas').insert({
-          user_id: userId,
-          titulo: parts[1],
-          tipo: parts[2] || 'personal',
+          user_id: userId, titulo: parts[1], tipo: parts[2] || 'personal',
           monto_objetivo: parseFloat(parts[3]) || null,
           fecha_limite: parts[4] || null,
-          año: new Date().getFullYear(),
-          estado: 'activa',
-          progreso: 0
+          año: new Date().getFullYear(), estado: 'activa', progreso: 0
         });
         if (!error) ejecutadas.push({ accion, detalle: parts[1] });
       }
-      // memoria se maneja en guardarMemoria()
-
-    } catch (e) {
-      console.error('Error ejecutando acción:', accion, e.message);
+    } catch(e) {
+      console.error('Error acción:', accion, e.message);
     }
   }
-
   return ejecutadas;
-}
-
-// ═══ GUARDAR MEMORIA — Claude decide qué es importante ═══
-async function guardarMemoria(mensaje, respuesta, userId) {
-  // Extraer [ACCION:memoria|tipo|contenido|importancia] de la respuesta
-  const matches = [...respuesta.matchAll(/\[ACCION:memoria\|([^|]+)\|([^|]+)\|?(\d?)\]/g)];
-
-  for (const m of matches) {
-    const tipo = m[1].trim();
-    const contenido = m[2].trim();
-    const importancia = parseInt(m[3]) || 3;
-
-    if (!contenido || contenido.length < 3) continue;
-
-    // Buscar si ya existe algo similar para no duplicar
-    const { data: existente } = await supabase
-      .from('ai_memory')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('tipo', tipo)
-      .ilike('contenido', `%${contenido.substring(0, 20)}%`)
-      .maybeSingle();
-
-    if (existente) {
-      await supabase.from('ai_memory')
-        .update({ contenido, importancia })
-        .eq('id', existente.id);
-    } else {
-      await supabase.from('ai_memory').insert({
-        user_id: userId,
-        tipo,
-        contenido,
-        importancia
-      });
-    }
-  }
-}
-
-// ═══ GUARDAR RESUMEN DE SESIÓN — siempre al final ═══
-async function guardarResumenSesion(history, ultimoMensaje, ultimaRespuesta, userId) {
-  try {
-    const ultimos = history.slice(-4).map(h =>
-      `${h.role === 'user' ? 'Usuario' : 'Ana'}: ${typeof h.content === 'string' ? h.content : h.content?.[0]?.text || ''}`
-    ).join('\n');
-
-    const conversacion = `${ultimos}\nUsuario: ${ultimoMensaje}\nAna: ${ultimaRespuesta.substring(0, 300)}`;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 120,
-        messages: [{
-          role: 'user',
-          content: `Resume en 1 línea lo más importante de esta conversación financiera (qué se habló, qué se registró, qué se acordó):\n${conversacion}`
-        }]
-      })
-    });
-
-    const data = await response.json();
-    const resumen = data.content?.[0]?.text?.trim();
-
-    if (resumen) {
-      await supabase.from('ia_sesiones').insert({
-        user_id: userId,
-        resumen,
-        mensajes_count: history.length + 1
-      });
-    }
-  } catch (e) {
-    // Silencioso — no bloquear la respuesta principal
-  }
 }
