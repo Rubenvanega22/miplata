@@ -233,9 +233,9 @@ async function extraerYGuardarMemorias(mensaje, respuesta, userId) {
     if (match) {
       const contenido = p.fmt(match);
       if (!contenido || contenido.includes('undefined')) continue;
-      const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', p.tipo).ilike('contenido', `%${contenido.substring(0, 15)}%`).maybeSingle();
+      const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', p.tipo).ilike('contenido', `%${contenido.substring(0, 15)}%`).single().catch(() => ({ data: null }));
       if (!existente) {
-        await supabase.from('ai_memory').insert({ user_id: userId, tipo: p.tipo, contenido, importancia: p.imp });
+        await supabase.from('ai_memory').insert({ user_id: userId, tipo: p.tipo, contenido, importancia: p.imp }).catch(() => {});
       }
     }
   }
@@ -247,11 +247,11 @@ async function extraerYGuardarMemorias(mensaje, respuesta, userId) {
     const contenido = m[2];
     const importancia = parseInt(m[3]) || 3;
     if (!contenido) continue;
-    const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', tipo).ilike('contenido', `%${contenido.substring(0, 20)}%`).maybeSingle();
+    const { data: existente } = await supabase.from('ai_memory').select('id').eq('user_id', userId).eq('tipo', tipo).ilike('contenido', `%${contenido.substring(0, 20)}%`).single().catch(() => ({ data: null }));
     if (existente) {
-      await supabase.from('ai_memory').update({ contenido, importancia }).eq('id', existente.id);
+      await supabase.from('ai_memory').update({ contenido, importancia }).eq('id', existente.id).catch(() => {});
     } else {
-      await supabase.from('ai_memory').insert({ user_id: userId, tipo, contenido, importancia });
+      await supabase.from('ai_memory').insert({ user_id: userId, tipo, contenido, importancia }).catch(() => {});
     }
   }
 }
@@ -272,7 +272,7 @@ async function guardarResumenSesion(history, ultimoMensaje, ultimaRespuesta, use
     const data = await res.json();
     const resumen = data.content?.[0]?.text?.trim();
     if (resumen) {
-      await supabase.from('ia_sesiones').insert({ user_id: userId, resumen, mensajes: history.length });
+      await supabase.from('ia_sesiones').insert({ user_id: userId, resumen, mensajes: history.length }).catch(() => {});
     }
   } catch (e) { /* silencioso */ }
 }
