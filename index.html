@@ -1949,6 +1949,9 @@ function rechazarDeteccion(id){
 let micActive = false;
 let recognition = null;
 let iaHistory = [];
+let modoVozActivo = false;
+let vozEscuchando = false;
+let vozProcesando = false;
 
 function addIAMsg(text, who){
   const el = document.getElementById('ia-msgs');
@@ -2011,6 +2014,8 @@ async function sendIA(){
     if(data.acciones && data.acciones.length > 0){
       setTimeout(()=>{ if(typeof loadData==='function') loadData(); }, 1000);
     }
+    // Si no hay TTS activo y estamos en modo voz, reanudar escucha
+    if(!ttsActivo && modoVozActivo) vozReanudar();
   } catch(e){
     hideTyping();
     addIAMsg('⚠️ Error: '+e.message,'bot');
@@ -2139,68 +2144,102 @@ function ejecutarAccionesIA(resp, originalMsg){
   });
 }
 
+// ════════════════════════════════════════
+// MODO VOZ CONTINUA — como Google Assistant
+// ════════════════════════════════════════
+
 function toggleMic(){
   if(!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)){
-    toast('⚠️ Tu navegador no soporta voz. Usa Chrome.','var(--amber)');
+    toast('⚠️ Usa Chrome para voz.','var(--amber)');
     return;
   }
-  // Si está hablando, callarla
-  if(ttsSpeaking){
-    window.speechSynthesis.cancel();
-    ttsSpeaking = false;
-    document.getElementById('mic-btn').style.background='';
+
+  if(modoVozActivo){
+    // APAGAR modo voz
+    detenerVoz();
     return;
   }
-  if(micActive){
-    micActive=false;
-    document.getElementById('mic-btn').classList.remove('active');
-    if(recognition) recognition.stop();
-    return;
-  }
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+
+  // ENCENDER modo voz
+  modoVozActivo = true;
+  document.getElementById('mic-btn').classList.add('active');
+  document.getElementById('mic-btn').textContent = '🔴';
+  toast('🎤 Modo voz activado — habla cuando quieras','var(--blue)');
+  iniciarEscucha();
+}
+
+function detenerVoz(){
+  modoVozActivo = false;
+  vozEscuchando = false;
+  vozProcesando = false;
+  if(recognition){ try{ recognition.stop(); }catch(e){} recognition = null; }
+  window.speechSynthesis.cancel();
+  document.getElementById('mic-btn').classList.remove('active');
+  document.getElementById('mic-btn').textContent = '🎤';
+  toast('🔇 Modo voz apagado','var(--t2)');
+}
+
+function iniciarEscucha(){
+  if(!modoVozActivo || vozEscuchando || vozProcesando) return;
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
-  recognition.lang='es-CO';
-  recognition.continuous=false;
-  recognition.interimResults=false;
-  recognition.onresult = e=>{
-    const txt = e.results[0][0].transcript;
-    document.getElementById('ia-input').value = txt;
-    micActive=false;
-    document.getElementById('mic-btn').classList.remove('active');
-    sendIA();
-  };
-  recognition.onerror = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
-  recognition.onend = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
-  // Esperar a que la IA termine de hablar antes de activar el micrófono
-  const iniciarMic = () => {
-    const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-    recognition = new SR();
-    recognition.lang='es-CO';
-    recognition.continuous=false;
-    recognition.interimResults=false;
-    recognition.onresult = e=>{
-      const txt = e.results[0][0].transcript;
-      document.getElementById('ia-input').value = txt;
-      micActive=false;
-      document.getElementById('mic-btn').classList.remove('active');
-      sendIA();
-    };
-    recognition.onerror = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
-    recognition.onend = ()=>{ micActive=false; document.getElementById('mic-btn').classList.remove('active'); };
-    recognition.start();
-    micActive=true;
-    document.getElementById('mic-btn').classList.add('active');
+  recognition.lang = 'es-CO';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    vozEscuchando = true;
+    document.getElementById('mic-btn').textContent = '👂';
   };
 
-  // Si la IA está hablando, esperar 800ms después de que termine
-  if(ttsSpeaking){
-    window.speechSynthesis.cancel();
-    ttsSpeaking = false;
-    setTimeout(iniciarMic, 800);
-  } else {
-    setTimeout(iniciarMic, 300);
+  recognition.onresult = e => {
+    const txt = e.results[0][0].transcript.trim();
+    if(!txt) return;
+    vozEscuchando = false;
+    vozProcesando = true;
+    document.getElementById('mic-btn').textContent = '⏳';
+    // Enviar a la IA
+    document.getElementById('ia-input').value = txt;
+    sendIA();
+  };
+
+  recognition.onerror = e => {
+    vozEscuchando = false;
+    if(!modoVozActivo) return;
+    // Si fue silencio o no-speech, volver a escuchar
+    if(e.error === 'no-speech' || e.error === 'audio-capture'){
+      setTimeout(()=>{ if(modoVozActivo && !vozProcesando) iniciarEscucha(); }, 500);
+    } else if(e.error === 'aborted'){
+      // normal, ignorar
+    } else {
+      setTimeout(()=>{ if(modoVozActivo && !vozProcesando) iniciarEscucha(); }, 1000);
+    }
+  };
+
+  recognition.onend = () => {
+    vozEscuchando = false;
+    // Si no está procesando y el modo sigue activo, volver a escuchar
+    if(modoVozActivo && !vozProcesando){
+      setTimeout(()=>{ if(modoVozActivo && !vozProcesando) iniciarEscucha(); }, 300);
+    }
+  };
+
+  try { recognition.start(); }
+  catch(e){ vozEscuchando = false; }
+}
+
+// Llamar esto cuando la IA termina de hablar — reanudar escucha
+function vozReanudar(){
+  vozProcesando = false;
+  document.getElementById('mic-btn').textContent = '🔴';
+  if(modoVozActivo){
+    setTimeout(iniciarEscucha, 600); // pequeña pausa antes de escuchar
   }
 }
+
+// Fin modo voz
 
 // ════════════════════════════════════════
 // TEXT TO SPEECH — Kontrol habla de vuelta
@@ -2242,6 +2281,7 @@ function hablar(texto){
     if(indice >= frases.length || !ttsActivo) {
       ttsSpeaking = false;
       document.getElementById('mic-btn').style.background='';
+      vozReanudar(); // reanudar escucha al terminar
       return;
     }
     const frase = frases[indice].trim();
@@ -2260,8 +2300,15 @@ function hablar(texto){
     if(vozEs) utt.voice = vozEs;
 
     utt.onstart = ()=>{ ttsSpeaking=true; document.getElementById('mic-btn').style.background='rgba(167,139,250,0.2)'; };
-    utt.onend = ()=>{ indice++; hablarFrase(); };
-    utt.onerror = ()=>{ ttsSpeaking=false; document.getElementById('mic-btn').style.background=''; };
+    utt.onend = ()=>{ 
+      indice++; 
+      hablarFrase(); 
+    };
+    utt.onerror = ()=>{ 
+      ttsSpeaking=false; 
+      document.getElementById('mic-btn').style.background='';
+      vozReanudar();
+    };
 
     window.speechSynthesis.speak(utt);
   };
