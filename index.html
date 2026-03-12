@@ -2266,11 +2266,22 @@ function hablar(texto){
   if(!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
 
-  // Limpiar texto
-  const limpio = texto
+  // Limpiar texto y convertir números a formato hablable
+  let limpio = texto
     .replace(/[\u{1F300}-\u{1FAFF}]/gu,'')
-    .replace(/[*_#`]/g,'')
+    .replace(/[*_#`═]/g,'')
     .replace(/\[.*?\]/g,'')
+    .replace(/\$/g,' pesos ')
+    // Números grandes: 1.000.000 → "un millón de pesos"
+    .replace(/(\d{1,3}(?:\.\d{3})+)/g, m => {
+      const num = parseInt(m.replace(/\./g,''));
+      if(num >= 1000000) return (num/1000000).toFixed(num%1000000===0?0:1) + ' millones';
+      if(num >= 1000) return (num/1000).toFixed(num%1000===0?0:1) + ' mil';
+      return m;
+    })
+    // Quitar "USD" o referencias a dólares, reemplazar por pesos
+    .replace(/USD|usd|dólares|dollars/gi, 'pesos')
+    .replace(/\s+/g,' ')
     .trim();
 
   // Dividir en frases para evitar que se corte en Android

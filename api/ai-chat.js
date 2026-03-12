@@ -80,13 +80,15 @@ module.exports = async function handler(req, res) {
     // 1. Contexto financiero en tiempo real
     const contexto = await buildContexto(user_id);
 
-    // 2. Buscar memorias relevantes en Mem0
-    const [memoriaRelevante, todasMemoria] = await Promise.all([
-      mem0Buscar(user_id, message),
-      mem0TraerTodo(user_id)
-    ]);
-
-    const memoria = todasMemoria || memoriaRelevante || 'Primera conversación con este usuario.';
+    // 2. Buscar memorias en Mem0 con timeout de 5 segundos
+    let memoria = 'Sin memoria previa.';
+    try {
+      const memPromise = mem0TraerTodo(user_id);
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+      memoria = await Promise.race([memPromise, timeout]) || 'Sin memoria previa.';
+    } catch(e) {
+      console.log('Mem0 no disponible, continuando sin memoria');
+    }
 
     // 3. Construir system prompt con contexto + memoria
     const systemPrompt = buildSystemPrompt(contexto, memoria);
@@ -101,11 +103,11 @@ module.exports = async function handler(req, res) {
     // 5. Ejecutar acciones (registrar gastos, eventos, etc.)
     const acciones = await ejecutarAcciones(respuesta, contexto, user_id);
 
-    // 6. Guardar conversación en Mem0 — aprende automáticamente
-    await mem0Guardar(user_id, [
+    // 6. Guardar en Mem0 en segundo plano — no bloquea la respuesta
+    mem0Guardar(user_id, [
       { role: 'user', content: message },
       { role: 'assistant', content: respuestaLimpia }
-    ]);
+    ]).catch(e => console.log('Mem0 guardar falló silenciosamente:', e.message));
 
     return res.json({ ok: true, respuesta: respuestaLimpia, acciones });
   } catch (error) {
