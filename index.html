@@ -2009,6 +2009,7 @@ let iaHistory = [];
 let modoVozActivo = false;
 let vozEscuchando = false;
 let vozProcesando = false;
+let vozSeleccionada = null;
 
 function addIAMsg(text, who){
   const el = document.getElementById('ia-msgs');
@@ -2396,7 +2397,6 @@ function toggleTTS(){
 }
 
 // ═══ SELECCIÓN DE VOZ ÓPTIMA ═══
-let vozSeleccionada = null;
 
 function seleccionarMejorVoz() {
   const voces = window.speechSynthesis.getVoices();
