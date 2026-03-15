@@ -2692,7 +2692,7 @@ function onImageSelected(event){
   reader.onload = async (e)=>{
     const dataUrl = e.target.result;
     // Comprimir agresivo: max 500px, calidad 0.5 para celulares con poca RAM
-    const compressed = await comprimirImagen(dataUrl, 500, 0.5);
+    const compressed = await comprimirImagen(dataUrl, 1024, 0.85);
     scanImageBase64 = compressed.split(",")[1];
     document.getElementById("scan-preview-img").src = compressed;
     document.getElementById("scan-preview-wrap").style.display="";
@@ -2733,16 +2733,32 @@ async function analizarFactura(){
   document.getElementById('scan-no-key').style.display='none';
   document.getElementById('scan-result').style.display='none';
 
-  const prompt = `Analiza esta imagen de factura o recibo colombiano. Responde SOLO en JSON sin markdown:
+  const prompt = `Eres un experto en leer facturas y recibos colombianos. Analiza esta imagen con mucho cuidado.
+
+INSTRUCCIONES CRÍTICAS:
+1. Lee el monto TOTAL con máxima precisión — busca "Total", "Valor", "Importe", "Neto a pagar"
+2. El monto es en pesos colombianos (COP) — puede tener puntos como separador de miles (ej: 45.000 = 45000)
+3. Si ves "$45.000" el monto es 45000
+4. Para la categoría, identifica el tipo de negocio:
+   - Restaurante, cafetería, supermercado, tienda → alimentacion
+   - Taxi, Uber, bus, gasolina, parqueadero → transporte  
+   - Agua, luz, gas, internet, teléfono, Netflix → servicios
+   - Farmacia, médico, clínica, laboratorio → salud
+   - Colegio, universidad, librería, cursos → educacion
+   - Ferretería, muebles, arriendo → hogar
+   - Cine, bar, entretenimiento → entretenimiento
+   - Cualquier otro → otro
+
+Responde SOLO en JSON válido sin ningún texto adicional ni markdown:
 {
-  "descripcion": "nombre del comercio o descripcion del gasto",
-  "monto": numero sin puntos ni comas,
+  "descripcion": "nombre exacto del comercio o servicio",
+  "monto": numero entero sin puntos ni comas (ejemplo: 45000),
   "fecha": "YYYY-MM-DD o null",
   "categoria": "alimentacion|transporte|servicios|salud|educacion|hogar|entretenimiento|otro",
-  "banco": "nombre del banco o null",
+  "banco": "nombre del banco si es comprobante bancario, sino null",
   "tipo": "gasto o ingreso",
-  "confianza": "alta|media|baja",
-  "notas": "datos adicionales"
+  "confianza": "alta si leíste el monto claramente, media si fue aproximado, baja si no pudiste leer bien",
+  "notas": "observaciones importantes"
 }`;
 
   try{
