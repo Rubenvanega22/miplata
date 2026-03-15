@@ -1138,6 +1138,63 @@ function load(){
 function save(){
   localStorage.setItem(DB_KEY, JSON.stringify(DB));
 }
+
+// ═══ SINCRONIZAR SUPABASE → DB LOCAL ═══
+async function syncDesdeSupabase() {
+  if (!currentUser) return;
+  try {
+    const uid = currentUser.id;
+    const [
+      { data: cuentas },
+      { data: movimientos },
+      { data: pagos },
+      { data: cajas },
+      { data: eventos },
+      { data: recordatorios }
+    ] = await Promise.all([
+      supa.from('accounts').select('*').eq('user_id', uid),
+      supa.from('movements').select('*').eq('user_id', uid).order('created_at', { ascending: false }).limit(200),
+      supa.from('payments').select('*').eq('user_id', uid),
+      supa.from('cajas').select('*').eq('user_id', uid),
+      supa.from('events').select('*').eq('user_id', uid),
+      supa.from('reminders').select('*').eq('user_id', uid)
+    ]);
+
+    // Actualizar DB local con datos de Supabase
+    if (cuentas) DB.cuentas = cuentas.map(c => ({
+      id: c.id, nombre: c.nombre, tipo: c.tipo || 'banco', saldo: parseFloat(c.saldo || 0)
+    }));
+
+    if (movimientos) DB.movimientos = movimientos.map(m => ({
+      id: m.id, tipo: m.tipo, descripcion: m.descripcion,
+      monto: parseFloat(m.monto), fecha: m.fecha,
+      cuentaId: m.account_id, categoria: m.categoria || 'otro', source: m.source || 'manual'
+    }));
+
+    if (pagos) DB.pagos = pagos.map(p => ({
+      id: p.id, nombre: p.nombre, monto: parseFloat(p.monto),
+      fecha_limite: p.fecha_limite, status: p.status
+    }));
+
+    if (cajas) DB.cajas = cajas.map(c => ({
+      id: c.id, nombre: c.nombre, saldo: parseFloat(c.saldo || 0)
+    }));
+
+    if (eventos) DB.eventos = eventos.map(e => ({
+      id: e.id, titulo: e.titulo, fecha: e.fecha, hora: e.hora, nota: e.nota
+    }));
+
+    if (recordatorios) DB.recordatorios = recordatorios.map(r => ({
+      id: r.id, tipo: r.tipo, titulo: r.titulo, fecha: r.fecha
+    }));
+
+    save();
+    renderResumen();
+    renderMovimientos();
+  } catch(e) {
+    console.error('Error sync Supabase:', e);
+  }
+}
 function defaultDB(){
   return {
     cuentas: [],
@@ -2012,7 +2069,7 @@ async function sendIA(){
     iaHistory.push({role:'assistant',content:respText});
     hablar(respText);
     if(data.acciones && data.acciones.length > 0){
-      setTimeout(()=>{ if(typeof loadData==='function') loadData(); }, 1000);
+      setTimeout(()=>{ syncDesdeSupabase(); }, 1000);
     }
     // Si no hay TTS activo y estamos en modo voz, reanudar escucha
     if(!ttsActivo && modoVozActivo) vozReanudar();
@@ -2966,11 +3023,11 @@ async function onLogin(user) {
   currentUser = user;
   const { data: profile } = await supa.from('profiles').select('*').eq('id', user.id).single();
   currentProfile = profile;
-  // Ocultar pantalla de auth
   document.getElementById('auth-screen').style.display = 'none';
-  // Actualizar nombre en IA
   if (profile?.nombre) DB.ia.usuarioNombre = profile.nombre;
   init();
+  // Sincronizar datos de Supabase al entrar
+  setTimeout(() => syncDesdeSupabase(), 500);
 }
 
 async function doLogout() {
