@@ -2448,12 +2448,6 @@ if('speechSynthesis' in window){
   cargarVoces();
   window.speechSynthesis.onvoiceschanged = cargarVoces;
 }
-  ttsActivo = t.classList.contains('on');
-  DB.ia.ttsActivo = ttsActivo;
-  save();
-  if(!ttsActivo) window.speechSynthesis.cancel();
-  toast(ttsActivo?'🔊 Voz activada':'🔇 Voz silenciada','var(--blue)');
-}
 
 // ════════════════════════════════════════
 // CONFIG
