@@ -611,7 +611,7 @@ select.form-inp option{background:#0c1228;}
           <!-- Sin API key -->
           <div id="scan-no-key" style="display:none">
             <div class="sc" style="border-color:rgba(245,158,11,0.25)">
-              <div style="font-size:13px;color:var(--amber);margin-bottom:8px">⚠️ Configura Groq para usar el escáner</div>
+              <div style="font-size:13px;color:var(--t3);margin-bottom:8px" id="scan-no-key" style="display:none">⚠️ Error al analizar la imagen</div>
               <div style="font-size:12px;color:var(--t3);margin-bottom:12px">Ve a Configuración → IA → elige Groq y pega tu API key gratuita de console.groq.com</div>
               <button class="btn-secondary" onclick="goTab('config')">⚙️ Ir a Configuración</button>
             </div>
@@ -2309,12 +2309,11 @@ function hablarCorto(texto){
   if(!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(texto);
-  utt.lang = 'es-CO';
-  utt.rate = 1.1;
+  const voz = vozSeleccionada || seleccionarMejorVoz();
+  if(voz) utt.voice = voz;
+  utt.rate = 1.0;
+  utt.pitch = 1.05;
   utt.volume = 1.0;
-  const voces = window.speechSynthesis.getVoices();
-  const vozEs = voces.find(v=>v.lang.startsWith('es')) || null;
-  if(vozEs) utt.voice = vozEs;
   window.speechSynthesis.speak(utt);
 }
 
@@ -2361,11 +2360,12 @@ function hablar(texto){
     utt.pitch = 1.0;
     utt.volume = 1.0;
 
-    const voces = window.speechSynthesis.getVoices();
-    const vozEs = voces.find(v=>v.lang.startsWith('es')&&v.name.toLowerCase().includes('female'))
-      || voces.find(v=>v.lang.startsWith('es'))
-      || null;
-    if(vozEs) utt.voice = vozEs;
+    const voz = vozSeleccionada || seleccionarMejorVoz();
+    if(voz) utt.voice = voz;
+    // Ajustar velocidad según la voz — Google suena bien a 1.0, otras a 0.95
+    utt.rate = voz && voz.name.includes('Google') ? 1.0 : 0.95;
+    utt.pitch = 1.05;
+    utt.volume = 1.0;
 
     utt.onstart = ()=>{ ttsSpeaking=true; document.getElementById('mic-btn').style.background='rgba(167,139,250,0.2)'; };
     utt.onend = ()=>{ 
@@ -2395,10 +2395,41 @@ function toggleTTS(){
   if(!ttsActivo) window.speechSynthesis.cancel();
 }
 
-// Cargar voces
-if('speechSynthesis' in window){
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = ()=>{ window.speechSynthesis.getVoices(); };
+// ═══ SELECCIÓN DE VOZ ÓPTIMA ═══
+let vozSeleccionada = null;
+
+function seleccionarMejorVoz() {
+  const voces = window.speechSynthesis.getVoices();
+  if (!voces.length) return null;
+
+  // Prioridad de voces — de más a menos natural
+  const prioridades = [
+    // Google voces naturales (Android)
+    v => v.name.includes('Google') && v.lang.startsWith('es') && v.name.includes('Female'),
+    v => v.name.includes('Google') && v.lang === 'es-US',
+    v => v.name.includes('Google') && v.lang === 'es-CO',
+    v => v.name.includes('Google') && v.lang.startsWith('es'),
+    // Samsung voces
+    v => v.name.includes('Samsung') && v.lang.startsWith('es'),
+    // Microsoft (desktop)
+    v => v.name.includes('Microsoft') && v.lang.startsWith('es') && v.name.includes('Laura'),
+    v => v.name.includes('Microsoft') && v.lang.startsWith('es') && v.name.includes('Sabina'),
+    v => v.name.includes('Microsoft') && v.lang.startsWith('es'),
+    // Apple (iOS/Mac)
+    v => v.name.includes('Paulina') && v.lang.startsWith('es'),
+    v => v.name.includes('Monica') && v.lang.startsWith('es'),
+    // Cualquier voz en español
+    v => v.lang === 'es-CO',
+    v => v.lang === 'es-MX',
+    v => v.lang === 'es-ES',
+    v => v.lang.startsWith('es'),
+  ];
+
+  for (const criterio of prioridades) {
+    const voz = voces.find(criterio);
+    if (voz) return voz;
+  }
+  return null;
 }
 
 function toggleTTSConfig(){
@@ -2408,15 +2439,15 @@ function toggleTTSConfig(){
   DB.ia.ttsActivo = ttsActivo;
 }
 
-// Cargar voces (algunas necesitan trigger)
+// Cargar voces al inicio y seleccionar la mejor
 if('speechSynthesis' in window){
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = ()=>{ window.speechSynthesis.getVoices(); };
+  const cargarVoces = () => {
+    window.speechSynthesis.getVoices();
+    vozSeleccionada = seleccionarMejorVoz();
+  };
+  cargarVoces();
+  window.speechSynthesis.onvoiceschanged = cargarVoces;
 }
-
-function toggleTTSConfig(){
-  const t = document.getElementById('toggle-tts');
-  t.classList.toggle('on');
   ttsActivo = t.classList.contains('on');
   DB.ia.ttsActivo = ttsActivo;
   save();
@@ -2704,118 +2735,46 @@ function comprimirImagen(dataUrl, maxSize, quality){
 }
 
 async function analizarFactura(){
-  const cfg = DB.ia;
-  if(cfg.proveedor==='local' || !cfg.apiKey){
-    document.getElementById('scan-no-key').style.display='';
-    return;
-  }
   document.getElementById('scan-loading').style.display='block';
   document.getElementById('scan-no-key').style.display='none';
   document.getElementById('scan-result').style.display='none';
 
-  const prompt = `Analiza esta imagen de factura, recibo o comprobante bancario colombiano.
-Extrae la siguiente información y responde SOLO en JSON válido sin markdown:
+  const prompt = `Analiza esta imagen de factura o recibo colombiano. Responde SOLO en JSON sin markdown:
 {
-  "descripcion": "nombre del comercio o descripción del gasto",
-  "monto": número sin puntos ni comas (ejemplo: 150000),
-  "fecha": "YYYY-MM-DD o null si no se ve",
-  "categoria": "uno de: alimentacion|transporte|servicios|salud|educacion|hogar|entretenimiento|otro",
-  "banco": "nombre del banco si aparece o null",
+  "descripcion": "nombre del comercio o descripcion del gasto",
+  "monto": numero sin puntos ni comas,
+  "fecha": "YYYY-MM-DD o null",
+  "categoria": "alimentacion|transporte|servicios|salud|educacion|hogar|entretenimiento|otro",
+  "banco": "nombre del banco o null",
   "tipo": "gasto o ingreso",
   "confianza": "alta|media|baja",
-  "notas": "cualquier dato adicional relevante"
-}
-Si no puedes leer la imagen claramente, igual intenta con los datos visibles.`;
+  "notas": "datos adicionales"
+}`;
 
   try{
-    let resultado = null;
-
-    if(cfg.proveedor==='groq'){
-      const modelo = cfg.modelo||'llama-3.2-11b-vision-preview';
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
-        body:JSON.stringify({
-          model: modelo,
-          max_tokens: 300,
-          messages:[{
-            role:'user',
-            content:[
-              {type:'image_url', image_url:{url:'data:image/jpeg;base64,'+scanImageBase64}},
-              {type:'text', text:prompt}
-            ]
-          }]
-        })
-      });
-      const d = await r.json();
-      if(d.error){ 
-        document.getElementById('scan-loading').style.display='none';
-        toast('❌ Groq: '+d.error.message,'var(--red)'); 
-        return; 
-      }
-      const raw = d.choices?.[0]?.message?.content||'{}';
-      resultado = parseIAJson(raw);
-    } else if(cfg.proveedor==='openai'){
-      const r = await fetch('https://api.openai.com/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
-        body:JSON.stringify({
-          model: cfg.modelo||'gpt-4o-mini',
-          max_tokens:300,
-          messages:[{role:'user',content:[
-            {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+scanImageBase64}},
-            {type:'text',text:prompt}
-          ]}]
-        })
-      });
-      const d = await r.json();
-      resultado = parseIAJson(d.choices?.[0]?.message?.content||'{}');
-    } else if(cfg.proveedor==='groq'){
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},
-        body:JSON.stringify({
-          model: cfg.modelo||'llama-3.3-70b-versatile',
-          max_tokens:500,
-          messages:[{role:'system',content:buildIASystem()},...iaHistory.slice(-10).map(m=>({role:m.role,content:m.content}))]
-        })
-      });
-      const data = await res.json();
-      respText = data.choices?.[0]?.message?.content || 'Sin respuesta';
-    } else if(cfg.proveedor==='gemini'){
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.modelo||'gemini-1.5-flash'}:generateContent?key=${cfg.apiKey}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents:[{parts:[
-          {inline_data:{mime_type:'image/jpeg',data:scanImageBase64}},
-          {text:prompt}
-        ]}]})
-      });
-      const d = await r.json();
-      resultado = parseIAJson(d.candidates?.[0]?.content?.parts?.[0]?.text||'{}');
-    } else if(cfg.proveedor==='claude'){
-      const r = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':cfg.apiKey,'anthropic-version':'2023-06-01'},
-        body:JSON.stringify({
-          model:cfg.modelo||'claude-haiku-4-5', max_tokens:300,
-          messages:[{role:'user',content:[
-            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:scanImageBase64}},
-            {type:'text',text:prompt}
-          ]}]
-        })
-      });
-      const d = await r.json();
-      resultado = parseIAJson(d.content?.[0]?.text||'{}');
-    }
-
+    // Usar el backend con Claude — no necesita config del usuario
+    const res = await fetch('/api/ai-chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        message: prompt,
+        imagen_base64: scanImageBase64,
+        history: [],
+        user_id: currentUser?.id || null
+      })
+    });
+    const data = await res.json();
     document.getElementById('scan-loading').style.display='none';
-    if(resultado) mostrarResultadoScan(resultado);
-    else { toast('❌ No se pudo analizar la imagen','var(--red)'); }
+
+    if(!res.ok) throw new Error(data.error || 'Error del servidor');
+
+    const resultado = parseIAJson(data.respuesta || '{}');
+    if(resultado && resultado.monto) mostrarResultadoScan(resultado);
+    else toast('❌ No se pudo leer la factura','var(--red)');
 
   } catch(e){
     document.getElementById('scan-loading').style.display='none';
-    toast('❌ Error al analizar: '+e.message,'var(--red)');
+    toast('❌ Error: '+e.message,'var(--red)');
   }
 }
 
