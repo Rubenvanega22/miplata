@@ -1334,11 +1334,11 @@ function filtrarMovsPorPeriodo(movs){
   });
 }
 
-function guardarMovimiento(){
+async function guardarMovimiento(){
   const desc = document.getElementById('mov-desc').value.trim();
   const monto = parseCOP(document.getElementById('mov-monto').value);
   const fecha = document.getElementById('mov-fecha').value;
-  const cuentaId = parseInt(document.getElementById('mov-cuenta').value)||0;
+  const cuentaId = document.getElementById('mov-cuenta').value;
   const categoria = document.getElementById('mov-categoria').value;
   const nota = document.getElementById('mov-nota').value.trim();
 
@@ -1346,22 +1346,35 @@ function guardarMovimiento(){
   if(!monto){ toast('⚠️ Ingresa un monto válido','var(--amber)'); return; }
   if(!fecha){ toast('⚠️ Selecciona una fecha','var(--amber)'); return; }
 
-  const mov = { id:uid(), tipo:movTipo, descripcion:desc, monto, fecha, cuentaId, categoria, nota, source:'manual' };
-  DB.movimientos.unshift(mov);
+  // Guardar en Supabase
+  const { data: mov, error } = await supa.from('movements').insert({
+    user_id: currentUser.id,
+    tipo: movTipo,
+    descripcion: desc,
+    monto,
+    fecha,
+    account_id: cuentaId || null,
+    categoria,
+    source: 'manual'
+  }).select().single();
 
-  // Actualizar saldo de cuenta
-  const cuenta = DB.cuentas.find(c=>c.id===cuentaId);
-  if(cuenta){
-    cuenta.saldo += (movTipo==='ingreso' ? monto : -monto);
+  if(error){ toast('❌ Error al guardar: '+error.message,'var(--red)'); return; }
+
+  // Actualizar saldo de cuenta en Supabase
+  if(cuentaId){
+    const cuenta = DB.cuentas.find(c=>c.id===cuentaId);
+    if(cuenta){
+      const nuevoSaldo = movTipo==='ingreso' ? cuenta.saldo+monto : cuenta.saldo-monto;
+      await supa.from('accounts').update({ saldo: nuevoSaldo }).eq('id', cuentaId).eq('user_id', currentUser.id);
+    }
   }
-  save();
+
   hideModal('modal-nuevo-mov');
   document.getElementById('mov-desc').value='';
   document.getElementById('mov-monto').value='';
   document.getElementById('mov-nota').value='';
   toast('✅ Movimiento guardado','var(--green)');
-  renderResumen();
-  renderMovimientos();
+  await syncDesdeSupabase();
 }
 
 function renderMovimientos(){
@@ -1395,19 +1408,22 @@ function renderMovimientos(){
 // ════════════════════════════════════════
 // CUENTAS
 // ════════════════════════════════════════
-function guardarCuenta(){
+async function guardarCuenta(){
   const nombre = document.getElementById('cuenta-nombre').value.trim();
   const tipo = document.getElementById('cuenta-tipo').value;
   const saldo = parseCOP(document.getElementById('cuenta-saldo').value);
   if(!nombre){ toast('⚠️ Escribe un nombre','var(--amber)'); return; }
-  DB.cuentas.push({ id:uid(), nombre, tipo, saldo });
-  save();
+
+  const { error } = await supa.from('accounts').insert({
+    user_id: currentUser.id, nombre, tipo, saldo
+  });
+  if(error){ toast('❌ Error: '+error.message,'var(--red)'); return; }
+
   hideModal('modal-nueva-cuenta');
   document.getElementById('cuenta-nombre').value='';
   document.getElementById('cuenta-saldo').value='';
   toast('✅ Cuenta creada','var(--green)');
-  renderResumen();
-  renderConfig();
+  await syncDesdeSupabase();
 }
 
 const tipoIco = {banco:'🏦',billetera:'📱',efectivo:'💵',credito:'💳'};
@@ -1586,29 +1602,27 @@ function setPagoFiltro(btn, f){
   renderPagos();
 }
 
-function guardarPago(){
+async function guardarPago(){
   const nombre = document.getElementById('pago-nombre').value.trim();
   const monto = parseCOP(document.getElementById('pago-monto').value);
   const fechaLimite = document.getElementById('pago-fecha').value;
   const categoria = document.getElementById('pago-categoria').value;
-  const cuentaId = parseInt(document.getElementById('pago-cuenta').value)||0;
-  const fijo = document.getElementById('pago-fijo-toggle').classList.contains('on');
 
   if(!nombre){ toast('⚠️ Escribe un nombre','var(--amber)'); return; }
   if(!monto){ toast('⚠️ Ingresa un monto','var(--amber)'); return; }
   if(!fechaLimite){ toast('⚠️ Selecciona fecha','var(--amber)'); return; }
 
-  const hoyStr = todayStr();
-  const diff = Math.floor((new Date(fechaLimite+'T12:00:00')-new Date(hoyStr+'T12:00:00'))/(1000*60*60*24));
-  const status = diff<0?'vencido':diff<=3?'proximo':'pendiente';
+  const { error } = await supa.from('payments').insert({
+    user_id: currentUser.id, nombre, monto,
+    fecha_limite: fechaLimite, status: 'pendiente'
+  });
+  if(error){ toast('❌ Error: '+error.message,'var(--red)'); return; }
 
-  DB.pagos.push({ id:uid(), nombre, monto, fechaLimite, categoria, cuentaId, fijo, status });
-  save();
   hideModal('modal-nuevo-pago');
   document.getElementById('pago-nombre').value='';
   document.getElementById('pago-monto').value='';
   toast('✅ Pago creado','var(--green)');
-  renderPagos();
+  await syncDesdeSupabase();
 }
 
 const catPagoIco = {servicios:'💡',arriendo:'🏠',transporte:'🚗',educacion:'📚',salud:'🏥',entretenimiento:'🎮',otro:'📦'};
@@ -1720,17 +1734,21 @@ function duplicarPagosFijos(){
 let cajaDetalleId = null;
 let ceTipo = 'in';
 
-function guardarCaja(){
+async function guardarCaja(){
   const nombre = document.getElementById('caja-nombre').value.trim();
   const saldo = parseCOP(document.getElementById('caja-saldo-ini').value);
   if(!nombre){ toast('⚠️ Escribe un nombre','var(--amber)'); return; }
-  DB.cajas.push({ id:uid(), nombre, saldo });
-  save();
+
+  const { error } = await supa.from('cajas').insert({
+    user_id: currentUser.id, nombre, saldo
+  });
+  if(error){ toast('❌ Error: '+error.message,'var(--red)'); return; }
+
   hideModal('modal-nueva-caja');
   document.getElementById('caja-nombre').value='';
   document.getElementById('caja-saldo-ini').value='';
   toast('✅ Caja creada','var(--green)');
-  renderCajas();
+  await syncDesdeSupabase();
 }
 
 function renderCajas(){
@@ -1797,21 +1815,25 @@ function renderCajaEntries(){
 // ════════════════════════════════════════
 // AGENDA
 // ════════════════════════════════════════
-function guardarEvento(){
+async function guardarEvento(){
   const titulo = document.getElementById('evento-titulo').value.trim();
   const fecha = document.getElementById('evento-fecha').value;
   const hora = document.getElementById('evento-hora').value;
   const nota = document.getElementById('evento-nota').value.trim();
   if(!titulo){ toast('⚠️ Escribe un título','var(--amber)'); return; }
   if(!fecha){ toast('⚠️ Selecciona una fecha','var(--amber)'); return; }
-  DB.eventos.push({ id:uid(), titulo, fecha, hora, nota });
-  save();
+
+  const { error } = await supa.from('events').insert({
+    user_id: currentUser.id, titulo, fecha, hora: hora||null, nota: nota||null
+  });
+  if(error){ toast('❌ Error: '+error.message,'var(--red)'); return; }
+
   hideModal('modal-nuevo-evento');
   document.getElementById('evento-titulo').value='';
   document.getElementById('evento-hora').value='';
   document.getElementById('evento-nota').value='';
   toast('✅ Evento agendado','var(--green)');
-  renderAgenda();
+  await syncDesdeSupabase();
 }
 
 function renderAgenda(){
@@ -1867,7 +1889,7 @@ function onRecTipoChange(){
   document.getElementById('rec-titulo-label').textContent = t==='definicion'?'Término':'Título / Nota';
 }
 
-function guardarRecordatorio(){
+async function guardarRecordatorio(){
   const tipo = document.getElementById('rec-tipo').value;
   const titulo = document.getElementById('rec-titulo').value.trim();
   if(!titulo){ toast('⚠️ Escribe un título','var(--amber)'); return; }
@@ -1880,14 +1902,18 @@ function guardarRecordatorio(){
   } else {
     content = { texto: titulo };
   }
-  DB.recordatorios.push({ id:uid(), tipo, titulo, content, fecha:todayStr(), status:'open' });
-  save();
+
+  const { error } = await supa.from('reminders').insert({
+    user_id: currentUser.id, tipo, titulo, content, fecha: todayStr()
+  });
+  if(error){ toast('❌ Error: '+error.message,'var(--red)'); return; }
+
   hideModal('modal-nuevo-recordar');
   document.getElementById('rec-titulo').value='';
   document.getElementById('rec-items').value='';
   document.getElementById('rec-definicion').value='';
   toast('✅ Recordatorio guardado','var(--green)');
-  renderRecordatorios();
+  await syncDesdeSupabase();
 }
 
 function renderRecordatorios(){
